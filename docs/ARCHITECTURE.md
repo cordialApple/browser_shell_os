@@ -38,7 +38,9 @@ noted.
 | `WindowMonitor` | 2 | Discovers browser top-level windows and tracks lifecycle (create / destroy / minimize / restore) via `EnumWindows` + `SetWinEventHook`. |
 | `TabReader` | 3 | Reads a browser window's tab titles through UI Automation. Interface is deliberately narrow so a native-messaging implementation can replace it later. |
 | `Store` | 3 | In-memory model: tracked windows and their last-known tabs. Single writer (UI thread); workers post snapshots into it. |
-| `Renderer` | 2–4 | Paints the dock. Grows from a text indicator (2) → one tab card (3) → staggered multi-card stack with hover-fan and click-to-restore (4). |
+| `Renderer` | 2–5 | Paints the dock. Grows from a text indicator (2) → one tab card (3) → staggered multi-card stack with hover-fan and click-to-restore (4) → button strip (5a). |
+| `Launcher` | 5 | Owns automation-button config (JSON, persisted); executes button actions (`ShellExecuteW` / `CreateProcessW`). |
+| `TaskbarOverlayWindow` | 5b | Click-through overlay positioned over the taskbar's empty region, hosting the buttons there. |
 
 Data model (introduced Stage 3, generalized Stage 4):
 
@@ -212,7 +214,71 @@ corresponding window when a card is clicked.
 - Repeated UIA snapshots across many windows: debounce per-window, snapshot
   only on minimize/title-change events, never on a timer.
 
-## 7. Cross-cutting concerns
+## 7. Stage 5 — Automation buttons in the taskbar's empty space
+
+### Goal
+Put quick-action launchers in the unused real estate of the taskbar itself:
+**pill-style or icon-style buttons** that perform one of three actions:
+
+1. **Open a website** — launch the default browser to a URL entered ad hoc.
+2. **Open a designated website** — a pinned, pre-configured URL (one button per
+   pinned site, with favicon/label).
+3. **Run an automation shortcut** — launch a configured command, script, or
+   `.lnk` shortcut (e.g. "open these 3 sites + this app"), bundled and
+   persistent with the shell tool.
+
+Buttons persist across sessions via the shell tool's config file.
+
+### Approach — two sub-phases (minimum functionality first)
+
+**Phase 5a — buttons hosted in the dock strip (safe, ships first).**
+The Stage 1 dock already owns reserved shell real estate; render the pill/icon
+buttons at its right end, next to the card stacks. Zero new shell integration
+risk; proves the button model, config persistence, and actions end to end.
+
+**Phase 5b — overlay on the taskbar's empty region (the headline).**
+Windows 11 removed the DeskBand/toolbar extension APIs, so nothing can be
+*injected into* the taskbar process safely. Instead, position a slim,
+borderless, topmost overlay window *over* the taskbar's empty region:
+
+- Locate the taskbar (`FindWindowW(L"Shell_TrayWnd", ...)`) and measure the
+  gap between the end of the task-button list and the tray area via UI
+  Automation over the taskbar's element tree (`ElementFromHandle` on the tray,
+  walk to the task list / `ReBarWindow32` rects on Win10; UIA rects on Win11).
+- Size/position the overlay inside that gap; re-measure on
+  `EVENT_OBJECT_LOCATIONCHANGE` for the task list (buttons appear/disappear as
+  apps open) and on the Stage-1 display-change events.
+- The overlay is click-through outside its buttons (`WM_NCHITTEST` →
+  `HTTRANSPARENT` in dead zones) so taskbar behavior is otherwise untouched.
+
+### Key APIs
+- Actions: `ShellExecuteW` (`open` verb) for URLs and `.lnk` shortcuts;
+  `CreateProcessW` for raw commands.
+- Config: a JSON file next to the executable
+  (`%LOCALAPPDATA%\browser_shell_os\config.json`) defining buttons:
+  `{ id, style: pill|icon, label, iconPath?, action: url|shortcut|command,
+  target }`. Loaded at startup, hot-reloaded on change
+  (`ReadDirectoryChangesW`).
+- New component: `Launcher` (owns button config, executes actions);
+  `Renderer` gains a button strip; Phase 5b adds `TaskbarOverlayWindow`.
+
+### Acceptance criteria
+- 5a: configured buttons render in the dock; clicking a URL button opens the
+  default browser to that site; clicking a shortcut button runs it; buttons
+  survive restart (config persistence).
+- 5b: buttons appear in the taskbar's empty space; opening many apps (task
+  list grows) pushes/shrinks the overlay rather than overlapping buttons;
+  clicks in remaining empty taskbar space still reach the taskbar.
+
+### Risks
+- 5b rests on measuring explorer's internal layout — resilient re-measurement
+  and a graceful fallback to 5a (dock-hosted buttons) are mandatory.
+- Windows updates can rearrange the taskbar's UIA tree; keep all measurement
+  heuristics inside `TaskbarOverlayWindow`, mirroring the `TabReader`
+  isolation rule.
+- Never inject code into explorer.exe; overlay-only.
+
+## 8. Cross-cutting concerns
 
 - **Threading model:** UI thread = dock message loop, sole `Store` writer.
   Worker thread(s) run `EnumWindows` re-validation and UIA snapshots; they
@@ -222,10 +288,11 @@ corresponding window when a card is clicked.
   the AppBar rect on `WM_DPICHANGED`, `WM_DISPLAYCHANGE`, and `ABN_POSCHANGED`.
 - **Lifetime hygiene:** `ABM_REMOVE` on every exit path; unhook all WinEvent
   hooks; `CoUninitialize` after UIA teardown.
-- **Configuration (later):** a small config file for which browser processes to
-  track and dock appearance. Not in stages 1–4 minimum functionality.
+- **Configuration:** a small config file for which browser processes to track
+  and dock appearance. Formalized in Stage 5 (button definitions live there);
+  not needed for stages 1–4 minimum functionality.
 
-## 8. Upgrade path: browser extension + native messaging (documented, not built)
+## 9. Upgrade path: browser extension + native messaging (documented, not built)
 
 If/when UIA's limits bite (no background-tab URLs, tree fragility), the
 replacement is the browsers' official **native messaging** mechanism:
@@ -237,8 +304,8 @@ replacement is the browsers' official **native messaging** mechanism:
   that forwards tab state to the shell tool over a local pipe — or the shell
   tool itself acts as the host.
 - Integration point: this becomes an alternative implementation behind the
-  `TabReader` interface. `Store`, `Renderer`, `WindowMonitor`, and `DockWindow`
-  are untouched.
+  `TabReader` interface. `Store`, `Renderer`, `WindowMonitor`, `DockWindow`,
+  and `Launcher` are untouched.
 
 Note: **no Electron anywhere in this architecture.** Electron was considered in
 early ideation as a host for a web-based dock UI; with a native C++ AppBar,
@@ -246,10 +313,11 @@ the dock already owns real shell-level screen space, and the native messaging
 host is a plain executable. Electron would add a Chromium runtime without
 adding capability.
 
-## 9. Repository layout
+## 10. Repository layout
 
 ```
 README.md
+CLAUDE.md                   working rules + Stage 1 step breakdown for AI-assisted dev
 docs/ARCHITECTURE.md        ← this document
 CMakeLists.txt              (lands with Stage 1)
 src/
@@ -259,9 +327,11 @@ src/
   TabReader.{h,cpp}         Stage 3 (UIA implementation)
   Store.{h,cpp}             Stage 3
   Renderer.{h,cpp}          Stages 2–4
+  Launcher.{h,cpp}          Stage 5
+  TaskbarOverlayWindow.{h,cpp}  Stage 5b
 ```
 
-## 10. Per-stage verification (run on Windows)
+## 11. Per-stage verification (run on Windows)
 
 | Stage | Test |
 |---|---|
@@ -269,8 +339,10 @@ src/
 | 2 | Start tool, then open Chrome → indicator on. Close all Chrome windows → indicator off. Task Manager shows ~0% CPU at idle. |
 | 3 | Open a browser with 5 known tabs, minimize → dock card lists the 5 titles. Restore → card clears. |
 | 4 | Open 3 browser windows (mixed Chrome + Edge), minimize all → 3 staggered cards. Hover → fan. Click card #2 → exactly that window restores. |
+| 5a | Configure a URL button + a shortcut button → both render in the dock; clicks perform the actions; restart the tool → buttons persist. |
+| 5b | Buttons appear in the taskbar's empty region; open 15 apps → overlay yields space to the growing task list; click empty taskbar space outside a button → normal taskbar behavior. |
 
-## 11. References
+## 12. References
 
 - [Using Application Desktop Toolbars — Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/shell/application-desktop-toolbars)
 - [`SHAppBarMessage` — Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shappbarmessage)

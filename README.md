@@ -27,9 +27,14 @@ aggregate the tabs of multiple minimized windows.
 | **2** | Detect that a browser is open and perform a simple action in the dock. |
 | **3** | Track one browser's tabs; keep them on-screen in the dock after the window is minimized. |
 | **4** | Track multiple browsers' tabs; aggregate minimized windows as a staggered card stack. |
+| **5** | Automation buttons in the taskbar's empty space: pill- or icon-style launchers for a website, a designated website, or a bundled automation shortcut — persisted with the shell. |
 
 Full technical detail, per-stage APIs, acceptance criteria, and risks:
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+Stage 1 is broken down into ordered implementation steps in
+[`CLAUDE.md`](CLAUDE.md), which also carries the working rules for AI-assisted
+development on this repo.
 
 ## Building
 
