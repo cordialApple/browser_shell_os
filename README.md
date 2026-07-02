@@ -29,6 +29,7 @@ aggregate the tabs of multiple minimized windows.
 | **4** | Track multiple browsers' tabs; aggregate minimized windows as a staggered card stack. |
 | **5** | Automation buttons in the taskbar's empty space: pill- or icon-style launchers for a website, a designated website, or a bundled automation shortcut — persisted with the shell. |
 | **P** | *(parallel, after Stage 1)* `shell_profiler`: a separate, never-bundled tool observing the shell's performance over ETW — zero telemetry bloat in the shell itself. |
+| **D** | *(deployment)* Permanent run from logon with auto-restart — the "Windows service" goal. Session-0 isolation means the dock itself can't be a service; permanence comes from logon autostart, later an optional zero-UI watchdog service. Details: `ARCHITECTURE.md` §13. |
 
 Full technical detail, per-stage APIs, acceptance criteria, and risks:
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

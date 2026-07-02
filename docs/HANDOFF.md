@@ -35,6 +35,7 @@ performance over ETW.
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
 | Stage 5 — taskbar buttons | ⬜ blocked on Stage 4 |
 | Profiler (parallel workstream) | ⬜ unlocks when Stage 1 accepted (`docs/plans/profiler.md`) |
+| Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
 **Next action: Stage 1, Step 1.1 — project scaffolding** (CMakeLists.txt,
 empty `wWinMain`, .gitignore). See `docs/plans/stage-1.md`.

@@ -418,7 +418,43 @@ profiler/                   shell_profiler — separate tool, never bundled
 | 5b | Buttons appear in the taskbar's empty region; open 15 apps → overlay yields space to the growing task list; click empty taskbar space outside a button → normal taskbar behavior. |
 | P | Run shell + `shell_profiler` → live event table shows `AppBarNegotiate`/`Paint` timings; kill profiler → shell unaffected; delete profiler binary → shell runs identically. |
 
-## 13. References
+## 13. Deployment & permanence — the "run as a Windows service" goal
+
+### Goal
+The shell eventually runs **permanently**: present from logon, always up,
+restarted automatically if it dies — the operational behavior of a Windows
+service.
+
+### Hard constraint: session 0 isolation
+Since Windows Vista, services run in **session 0** and cannot create windows
+on the interactive desktop. An AppBar dock is interactive-session UI by
+definition, so **the dock process itself can never literally be a service** —
+a service-hosted dock would be invisible. The service *goal* (permanence,
+auto-restart) is delivered instead by one of two supported shapes:
+
+**Permanence v1 — logon autostart (simple, ships first).**
+Register the dock at user logon via a Scheduled Task (logon trigger; its
+built-in "restart on failure" setting provides watchdog behavior for free) or
+the `HKCU\...\Run` key (no restart-on-crash). Combined with the Step-1.7
+single-instance mutex, re-launch attempts are naturally idempotent.
+
+**Permanence v2 — a true service as watchdog only (optional, later).**
+A minimal `browser_shell_svc` Windows service containing **zero UI**: it
+listens for session logon (`SERVICE_CONTROL_SESSIONCHANGE`), obtains the
+user's token (`WTSQueryUserToken`), and launches/relaunches the dock **inside
+the interactive session** via `CreateProcessAsUser`. The same separation
+discipline as the profiler applies: separate executable, separate build
+target, never bundled with the shell; its only job is keeping the dock
+process alive. Requires an installer step with admin rights (`CreateService`).
+
+### Scheduling
+Permanence v1 can land any time after Stage 1 is accepted (it is a deployment
+detail, not a code change). Permanence v2 is a **post-Stage-5 workstream** —
+plan it in `docs/plans/` when it begins, per the CLAUDE.md protocol. In both
+shapes the dock keeps its own exit hygiene (Step 1.7); the watchdog only
+restarts, never cleans up for it.
+
+## 14. References
 
 - [Using Application Desktop Toolbars — Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/shell/application-desktop-toolbars)
 - [`SHAppBarMessage` — Microsoft Learn](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shappbarmessage)
