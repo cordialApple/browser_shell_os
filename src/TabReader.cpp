@@ -8,6 +8,31 @@ using Microsoft::WRL::ComPtr;
 namespace
 {
 
+// Walk up the parent chain looking for a Document control type.
+// Browser chrome elements are never inside a document; web content always is.
+static bool IsInsideDocument(IUIAutomation* automation, IUIAutomationElement* startElem)
+{
+    ComPtr<IUIAutomationTreeWalker> walker;
+    if (FAILED(automation->get_RawViewWalker(&walker)) || !walker) return false;
+
+    ComPtr<IUIAutomationElement> current;
+    startElem->QueryInterface(IID_PPV_ARGS(&current));
+
+    for (int depth = 0; depth < 30 && current; ++depth)
+    {
+        ComPtr<IUIAutomationElement> parent;
+        if (FAILED(walker->GetParentElement(current.Get(), &parent)) || !parent) break;
+
+        CONTROLTYPEID ct = 0;
+        if (SUCCEEDED(parent->get_CurrentControlType(&ct)) &&
+            ct == UIA_DocumentControlTypeId)
+            return true;
+
+        current = std::move(parent);
+    }
+    return false;
+}
+
 std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
 {
     ComPtr<IUIAutomationElement> elem;
@@ -36,22 +61,13 @@ std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
     if (FAILED(automation->CreatePropertyCondition(UIA_ControlTypePropertyId, vt, &tabItemCond)))
         return {};
 
-    // Browser chrome tab bar sits in the top ~15% of the window.
-    // Web-content tab controls (YouTube categories, etc.) appear lower.
-    // Use screen coordinates: window top + 300px covers even 300% DPI chrome height.
-    RECT winRect = {};
-    GetWindowRect(hwnd, &winRect);
-    const LONG tabBarMaxBottom = winRect.top + 300;
-
     for (int ci = 0; ci < ctrlCount; ++ci)
     {
         ComPtr<IUIAutomationElement> tabCtrl;
         if (FAILED(tabCtrls->GetElement(ci, &tabCtrl)) || !tabCtrl) continue;
 
-        // Skip controls whose top edge is below the browser chrome area.
-        RECT ctrlRect = {};
-        if (SUCCEEDED(tabCtrl->get_CurrentBoundingRectangle(&ctrlRect)))
-            if (ctrlRect.top >= tabBarMaxBottom) continue;
+        // Skip web-content tab controls — they live inside a Document node.
+        if (IsInsideDocument(automation, tabCtrl.Get())) continue;
 
         ComPtr<IUIAutomationElementArray> items;
         if (FAILED(tabCtrl->FindAllBuildCache(TreeScope_Children, tabItemCond.Get(),
