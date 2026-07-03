@@ -30,20 +30,19 @@ performance over ETW.
 |---|---|
 | Docs & plans | ✅ Complete (architecture + per-stage plans) |
 | Stage 1 — AppBar dock | ✅ Complete — all 7 steps + acceptance row passed on Win11 |
-| Stage 2 — browser detection | ⬜ **NEXT** (Stage 1 complete) |
+| Stage 2 — browser detection | 🔄 In progress (step 2.1 done) |
 | Stage 3 — single-window tabs | ⬜ blocked on Stage 2 |
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
 | Stage 5 — taskbar buttons | ⬜ blocked on Stage 4 |
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 2 — browser detection** (`docs/plans/stage-2.md`).
-Stage 1 fully accepted on Win11. Profiler workstream also now unlocked.
+**Next action: Stage 2, Step 2.2** — initial scan + dock indicator.
 
-Deferred debt going into Stage 2:
-- [F-01 threading] Crash filter calls SHAppBarMessage on faulting thread + g_dockHwnd is
-  non-atomic. Harmless in single-threaded Stage 1. MUST FIX before the first Stage 2 step
-  that adds a worker thread (marshal to UI thread, make g_dockHwnd atomic).
+Deferred debt:
+- [F-01 threading] g_dockHwnd non-atomic; CrashFilter reads from faulting thread. HARD GATE:
+  must fix (std::atomic<HWND>) before Step 2.3 checkpoint (first worker thread). Also marshal
+  SHAppBarMessage call to UI thread.
 - [DPI] Mixed-DPI AppBarSetPos monitor/DPI-source mismatch — defer to multi-monitor stage.
 
 **Build note (this machine):** VS2022 Pro's C++ install now works — the
@@ -124,6 +123,11 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   kill checkpoint tests not formally observed (user moved on; Task Manager kill
   behavior deferred to 1.7 doc). Debug rect adjusted to (160,1645) for testing.
   Next: 1.5.
+- 2026-07-03 — Step 2.1 done: WindowMonitor.{h,cpp} with IsBrowserFrame (Chrome_WidgetWin_1,
+  visible, unowned, non-empty title, chrome.exe/msedge.exe via QueryFullProcessImageNameW) +
+  ScanBrowserFrames. --scan debug flag in #ifdef _DEBUG. Inspector burst (AppBar: clean;
+  threading: F-01 pre-existing deferred to 2.3, comment tightened) → adjudicator → MAY PROCEED.
+  Build pending on Windows. Next: 2.2.
 - 2026-07-03 — Step 1.3 done: WM_PAINT (dark fill + DPI-scaled Segoe UI 12pt
   via GetDpiForWindow+MulDiv), WM_ERASEBKGND→1, hbrBackground=nullptr,
   UpdateWindow after ShowWindow. Inspector burst (AppBar-hygiene, threading,

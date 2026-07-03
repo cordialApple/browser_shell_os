@@ -2,6 +2,7 @@
 #include <shellapi.h>
 
 #include "DockWindow.h"
+#include "WindowMonitor.h"
 
 namespace
 {
@@ -26,8 +27,27 @@ namespace
     }
 }
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR lpCmdLine, int)
 {
+#ifdef _DEBUG
+    // Debug scan: run IsBrowserFrame against all top-level windows, print to debugger.
+    if (wcsstr(lpCmdLine, L"--scan"))
+    {
+        const auto frames = ScanBrowserFrames();
+        wchar_t buf[512];
+        swprintf_s(buf, L"[scan] %zu browser frame(s) found\n", frames.size());
+        OutputDebugStringW(buf);
+        for (HWND h : frames)
+        {
+            wchar_t title[256] = {};
+            GetWindowTextW(h, title, _countof(title));
+            swprintf_s(buf, L"  hwnd=0x%p  %s\n", static_cast<void*>(h), title);
+            OutputDebugStringW(buf);
+        }
+        return 0;
+    }
+#endif
+
     // Single instance: second launch exits immediately; two appbars = geometry chaos.
     const HANDLE mutex = CreateMutexW(nullptr, FALSE, kMutexName);
     if (!mutex || GetLastError() == ERROR_ALREADY_EXISTS)
