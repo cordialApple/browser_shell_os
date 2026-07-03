@@ -37,12 +37,39 @@ namespace
 
         HFONT old = static_cast<HFONT>(SelectObject(hdc, titleFont));
         SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, kTextPrimary);
 
-        RECT titleRc = { cardRc.left + pad, cardRc.top + pad,
-                         cardRc.right - pad, cardRc.top + cardH / 2 };
-        DrawTextW(hdc, win.title.c_str(), -1, &titleRc,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        const int hdrTop  = cardRc.top + pad;
+        const int hdrBot  = cardRc.top + cardH / 2;
+        const int hdrLeft = cardRc.left + pad;
+        const int hdrRight = cardRc.right - pad;
+
+        // "N tabs" badge, right-aligned; title centered in a symmetric remainder.
+        // Only show the badge if it fits symmetrically beside a minimum title width,
+        // otherwise the title rect would invert and the title would vanish.
+        wchar_t badge[24];
+        swprintf_s(badge, L"%d tab%s",
+                   static_cast<int>(win.tabs.size()),
+                   win.tabs.size() == 1 ? L"" : L"s");
+        SIZE badgeSz = {};
+        GetTextExtentPoint32W(hdc, badge, static_cast<int>(wcslen(badge)), &badgeSz);
+        const int badgeCol = badgeSz.cx + ScalePx(4, dpiI);  // pad so badge never touches title
+        const int minTitle = ScalePx(30, dpiI);
+
+        RECT titleRc = { hdrLeft, hdrTop, hdrRight, hdrBot };
+        if (2 * badgeCol + minTitle <= hdrRight - hdrLeft)
+        {
+            RECT badgeRc = { hdrRight - badgeSz.cx, hdrTop, hdrRight, hdrBot };
+            SetTextColor(hdc, kTextSecond);
+            DrawTextW(hdc, badge, -1, &badgeRc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+            titleRc.left  = hdrLeft + badgeCol;
+            titleRc.right = hdrRight - badgeCol;
+        }
+        if (titleRc.right > titleRc.left)
+        {
+            SetTextColor(hdc, kTextPrimary);
+            DrawTextW(hdc, win.title.c_str(), -1, &titleRc,
+                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        }
 
         SelectObject(hdc, tabFont);
 
@@ -53,10 +80,10 @@ namespace
         const int n    = static_cast<int>(win.tabs.size());
 
         const int gap      = ScalePx(4, dpiI);
-        const int minChipW = ScalePx(46, dpiI);
+        const int minChipW = ScalePx(110, dpiI);  // legible width; +N absorbs the rest
         const int chipPad  = ScalePx(6, dpiI);
 
-        if (n > 0 && rowW > minChipW)
+        if (n > 0 && rowW > gap)
         {
             // Fit as many chips as possible at min width; reserve a "+N" slot only
             // if some overflow AND a chip still fits beside it. Then stretch the
