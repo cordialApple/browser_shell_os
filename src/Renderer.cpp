@@ -40,7 +40,7 @@ namespace
         RECT titleRc = { cardRc.left + pad, cardRc.top + pad,
                          cardRc.right - pad, cardRc.top + cardH / 2 };
         DrawTextW(hdc, win.title.c_str(), -1, &titleRc,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                  DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SelectObject(hdc, tabFont);
         SetTextColor(hdc, kTextSecond);
@@ -58,7 +58,7 @@ namespace
                        cardRc.right - pad, cardRc.bottom - pad };
         if (!tabLine.empty())
             DrawTextW(hdc, tabLine.c_str(), -1, &tabRc,
-                      DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SelectObject(hdc, old);
         DeleteObject(titleFont);
