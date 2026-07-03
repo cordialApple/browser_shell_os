@@ -8,16 +8,6 @@ using Microsoft::WRL::ComPtr;
 namespace
 {
 
-static bool IsWebContentTabName(const wchar_t* name)
-{
-    if (!name) return false;
-    const wchar_t* p = name;
-    if (p[0] != L't' || p[1] != L'a' || p[2] != L'b' || p[3] != L'-') return false;
-    for (p += 4; *p; ++p)
-        if (*p < L'0' || *p > L'9') return false;
-    return p > name + 4;
-}
-
 std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
 {
     ComPtr<IUIAutomationElement> elem;
@@ -34,9 +24,6 @@ std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
     if (FAILED(automation->CreatePropertyCondition(UIA_ControlTypePropertyId, vt, &tabCtrlCond)))
         return {};
 
-    // FindAll so we can skip web-content tab panels (e.g. YouTube's <div role="tablist">
-    // whose items get UIA names like "tab-0", "tab-1"). Browser chrome tabs come first
-    // in tree order on most pages but not all.
     ComPtr<IUIAutomationElementArray> tabCtrls;
     if (FAILED(elem->FindAll(TreeScope_Descendants, tabCtrlCond.Get(), &tabCtrls)) || !tabCtrls)
         return {};
@@ -49,10 +36,22 @@ std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
     if (FAILED(automation->CreatePropertyCondition(UIA_ControlTypePropertyId, vt, &tabItemCond)))
         return {};
 
+    // Browser chrome tab bar sits in the top ~15% of the window.
+    // Web-content tab controls (YouTube categories, etc.) appear lower.
+    // Use screen coordinates: window top + 300px covers even 300% DPI chrome height.
+    RECT winRect = {};
+    GetWindowRect(hwnd, &winRect);
+    const LONG tabBarMaxBottom = winRect.top + 300;
+
     for (int ci = 0; ci < ctrlCount; ++ci)
     {
         ComPtr<IUIAutomationElement> tabCtrl;
         if (FAILED(tabCtrls->GetElement(ci, &tabCtrl)) || !tabCtrl) continue;
+
+        // Skip controls whose top edge is below the browser chrome area.
+        RECT ctrlRect = {};
+        if (SUCCEEDED(tabCtrl->get_CurrentBoundingRectangle(&ctrlRect)))
+            if (ctrlRect.top >= tabBarMaxBottom) continue;
 
         ComPtr<IUIAutomationElementArray> items;
         if (FAILED(tabCtrl->FindAllBuildCache(TreeScope_Children, tabItemCond.Get(),
@@ -62,19 +61,6 @@ std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
         int count = 0;
         items->get_Length(&count);
         if (count == 0) continue;
-
-        // Check first item: if it looks like "tab-<digits>", this is web content.
-        ComPtr<IUIAutomationElement> first;
-        if (SUCCEEDED(items->GetElement(0, &first)) && first)
-        {
-            BSTR probe = nullptr;
-            if (SUCCEEDED(first->get_CachedName(&probe)))
-            {
-                bool isWeb = IsWebContentTabName(probe);
-                SysFreeString(probe);
-                if (isWeb) continue;
-            }
-        }
 
         std::vector<Tab> tabs;
         tabs.reserve(count);
