@@ -316,9 +316,10 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         {
 #ifdef _DEBUG
             wchar_t dbg[512];
-            swprintf_s(dbg, L"[TabReader] hwnd=%p tabs=%d\n",
+            swprintf_s(dbg, L"[TabReader] hwnd=%p tabs=%d failed=%d\n",
                        reinterpret_cast<void*>(payload->hwnd),
-                       static_cast<int>(payload->tabs.size()));
+                       static_cast<int>(payload->tabs.size()),
+                       payload->failed ? 1 : 0);
             OutputDebugStringW(dbg);
             for (const auto& tab : payload->tabs)
             {
@@ -326,7 +327,10 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
                 OutputDebugStringW(dbg);
             }
 #endif
-            m_store.SetTabs(payload->hwnd, std::move(payload->tabs));
+            if (payload->failed)
+                m_store.MarkTabsStale(payload->hwnd);
+            else
+                m_store.SetTabs(payload->hwnd, std::move(payload->tabs));
             delete payload;
             InvalidateRect(hwnd, nullptr, FALSE);
         }

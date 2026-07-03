@@ -111,7 +111,8 @@ void TabReader::WorkerLoop()
         if (automation)
             tabs = SnapshotTabs(automation.Get(), target);
 
-        auto* payload = new TabSnapshot{ target, std::move(tabs) };
+        const bool failed = tabs.empty();
+        auto* payload = new TabSnapshot{ target, std::move(tabs), failed };
         if (!PostMessageW(m_dockHwnd, m_resultMsg,
                           reinterpret_cast<WPARAM>(target),
                           reinterpret_cast<LPARAM>(payload)))

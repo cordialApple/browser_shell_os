@@ -51,11 +51,14 @@ namespace
             if (i > 0) tabLine += L"  ·  ";
             tabLine += win.tabs[i].title;
         }
+        if (win.tabsStale)
+            tabLine += tabLine.empty() ? L"(stale)" : L"  (stale)";
 
         RECT tabRc = { cardRc.left + pad, cardRc.top + cardH / 2,
                        cardRc.right - pad, cardRc.bottom - pad };
-        DrawTextW(hdc, tabLine.c_str(), -1, &tabRc,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        if (!tabLine.empty())
+            DrawTextW(hdc, tabLine.c_str(), -1, &tabRc,
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
 
         SelectObject(hdc, old);
         DeleteObject(titleFont);

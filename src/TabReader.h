@@ -11,6 +11,7 @@
 struct TabSnapshot {
     HWND             hwnd;
     std::vector<Tab> tabs;
+    bool             failed = false;
 };
 
 // All UIA tree-shape assumptions live in TabReader.cpp only (CLAUDE.md rule 6).

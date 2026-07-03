@@ -13,6 +13,7 @@ struct TrackedWindow {
     std::wstring     title;
     bool             minimized = false;
     std::vector<Tab> tabs;
+    bool             tabsStale = false;
 };
 
 // UI-thread-only writer. No locking.
@@ -22,6 +23,7 @@ public:
     void Set(HWND hwnd, std::wstring title);
     void SetMinimized(HWND hwnd, bool minimized);
     void SetTabs(HWND hwnd, std::vector<Tab> tabs);
+    void MarkTabsStale(HWND hwnd);
     void Remove(HWND hwnd);
     bool Has(HWND hwnd) const;
     bool Empty() const { return m_windows.empty(); }
