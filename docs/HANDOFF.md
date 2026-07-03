@@ -37,7 +37,7 @@ performance over ETW.
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 3 step 3.2 — minimize/restore detection** (`docs/plans/stage-3.md`).
+**Next action: Stage 3 step 3.3 — TabReader UIA snapshot on worker thread** (`docs/plans/stage-3.md`).
 
 Deferred debt:
 - [F-01 threading] g_dockHwnd non-atomic; CrashFilter reads from faulting thread. HARD GATE:
@@ -148,6 +148,7 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   ScanBrowserFrames. --scan debug flag in #ifdef _DEBUG. Inspector burst (AppBar: clean;
   threading: F-01 pre-existing deferred to 2.3, comment tightened) → adjudicator → MAY PROCEED.
   Build pending on Windows. Next: 2.2.
+- 2026-07-03 — Step 3.2 done: second WinEvent hook (MINIMIZESTART..END); Store::SetMinimized; kWindowEventMsg fast-paths minimize events (bypass debounce); IsIconic check on initial scan; Renderer shows "<title> — minimized". Inspector burst (AppBar: F-A2 WM_ENDSESSION no-unhook — informational, ABM_REMOVE confirmed; threading: clean) → adjudicator → MAY PROCEED. Build clean; runtime checkpoint pending on Windows. Next: 3.3.
 - 2026-07-03 — Step 3.1 done: Store.{h,cpp} (Tab/TrackedWindow structs, HWND-keyed map, UI-thread-only). Migrated DockWindow::m_browsers→m_store:Store; Renderer now takes const Store&. Simplifier extracted StoreWindow helper. Inspector burst (AppBar: F-A1 pre-existing double-PostQuitMessage — safe, no double ABM_REMOVE; threading: F-T1 comment nit, F-T2 ordering note — both pre-existing) → adjudicator → MAY PROCEED. Build clean; runtime checkpoint pending on Windows. Next: 3.2.
 - 2026-07-03 — Step 1.3 done: WM_PAINT (dark fill + DPI-scaled Segoe UI 12pt
   via GetDpiForWindow+MulDiv), WM_ERASEBKGND→1, hbrBackground=nullptr,
