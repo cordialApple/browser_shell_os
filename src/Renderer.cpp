@@ -53,33 +53,37 @@ namespace
 
         const int gap      = ScalePx(4, dpiI);
         const int minChipW = ScalePx(46, dpiI);
-        const int maxChipW = ScalePx(120, dpiI);
         const int chipPad  = ScalePx(6, dpiI);
 
-        auto clampi = [](int v, int lo, int hi) { return v < lo ? lo : (v > hi ? hi : v); };
-
-        std::wstring trailer;
         if (n > 0 && rowW > minChipW)
         {
-            int chipW    = clampi(rowW / n - gap, minChipW, maxChipW);
-            int capacity = (rowW + gap) / (chipW + gap);
-            if (capacity < 1) capacity = 1;
-
+            // Fit as many chips as possible at min width; reserve a "+N" slot only
+            // if some overflow AND a chip still fits beside it. Then stretch the
+            // visible chips to fill the full row.
             int trailerW = 0;
-            const bool mayOverflow = capacity < n;
-            if (mayOverflow || win.tabsStale)
+            int fit = (rowW + gap) / (minChipW + gap);
+            if (fit < 1) fit = 1;
+            int visible = n <= fit ? n : fit;
+
+            if (visible < n)
             {
-                trailerW = ScalePx(80, dpiI) + gap;
-                capacity = (rowW - trailerW + gap) / (chipW + gap);
-                if (capacity < 1) capacity = 1;
+                const int tw = ScalePx(44, dpiI) + gap;
+                const int fitWithTrailer = (rowW - tw + gap) / (minChipW + gap);
+                if (fitWithTrailer >= 1)
+                {
+                    trailerW = tw;
+                    visible = fitWithTrailer < n ? fitWithTrailer : n;
+                }
             }
 
-            const int visible = capacity < n ? capacity : n;
+            const int chipArea = rowW - trailerW;
+            const int chipW = (chipArea - (visible - 1) * gap) / visible;
 
             int x = rowRc.left;
             for (int i = 0; i < visible; ++i)
             {
-                RECT chip = { x, rowRc.top, x + chipW, rowRc.bottom };
+                const int right = (i == visible - 1) ? rowRc.left + chipArea : x + chipW;
+                RECT chip = { x, rowRc.top, right, rowRc.bottom };
                 HBRUSH chipBrush = CreateSolidBrush(kChipBg);
                 FillRect(hdc, &chip, chipBrush);
                 DeleteObject(chipBrush);
@@ -93,29 +97,15 @@ namespace
             }
 
             const int hidden = n - visible;
-            if (hidden > 0)
+            if (hidden > 0 && trailerW > 0)
             {
                 wchar_t buf[16];
                 swprintf_s(buf, L"+%d", hidden);
-                trailer = buf;
-            }
-            if (win.tabsStale)
-                trailer += trailer.empty() ? L"(stale)" : L" (stale)";
-
-            if (!trailer.empty())
-            {
-                RECT tr = { x, rowRc.top, rowRc.right, rowRc.bottom };
+                RECT tr = { rowRc.left + chipArea + gap, rowRc.top, rowRc.right, rowRc.bottom };
                 SetTextColor(hdc, kTextSecond);
-                DrawTextW(hdc, trailer.c_str(), -1, &tr,
+                DrawTextW(hdc, buf, -1, &tr,
                           DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
             }
-        }
-        else if (win.tabsStale)
-        {
-            RECT tr = rowRc;
-            SetTextColor(hdc, kTextSecond);
-            DrawTextW(hdc, L"(stale)", -1, &tr,
-                      DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         }
 
         SelectObject(hdc, old);
