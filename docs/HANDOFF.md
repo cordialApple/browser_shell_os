@@ -31,13 +31,13 @@ performance over ETW.
 | Docs & plans | ✅ Complete (architecture + per-stage plans) |
 | Stage 1 — AppBar dock | ✅ Complete — all 7 steps + acceptance row passed on Win11 |
 | Stage 2 — browser detection | ✅ Complete — all 4 steps + §12 row 2 accepted on Win11 |
-| Stage 3 — single-window tabs | 🔄 in progress — step 3.1 done |
+| Stage 3 — single-window tabs | 🔄 in progress — step 3.4 done |
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
 | Stage 5 — taskbar buttons | ⬜ blocked on Stage 4 |
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 3 step 3.4 — render the tab card** (`docs/plans/stage-3.md`).
+**Next action: Stage 3 step 3.5 — staleness + failure handling** (`docs/plans/stage-3.md`).
 
 Deferred debt:
 - [F-01 threading] g_dockHwnd non-atomic; CrashFilter reads from faulting thread. HARD GATE:
@@ -148,6 +148,7 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   ScanBrowserFrames. --scan debug flag in #ifdef _DEBUG. Inspector burst (AppBar: clean;
   threading: F-01 pre-existing deferred to 2.3, comment tightened) → adjudicator → MAY PROCEED.
   Build pending on Windows. Next: 2.2.
+- 2026-07-03 — Step 3.4 done: Renderer draws tab card for minimized windows — title header (FW_SEMIBOLD 10pt) + tab line (FW_NORMAL 9pt, " · " separator, DT_END_ELLIPSIS) from Store::tabs; DrawCard helper; active-window path unchanged. Pre-existing TabReader ComPtr/.Get() compile bug fixed. Inspector burst (AppBar: clean; threading: clean; DPI: F-D1 nit fixed inline, F-D2 informational pre-existing) → adjudicator → MAY PROCEED. Build clean; §12 row 3 runtime acceptance pending on Windows. Next: 3.5.
 - 2026-07-03 — Step 3.3 done: TabReader.{h,cpp} — worker thread (COINIT_MULTITHREADED), CoCreateInstance IUIAutomation, SnapshotTabs (ElementFromHandle→TabControl→TabItems→CachedName), PostMessage kTabSnapshotMsg heap payload. Third WinEvent hook (NAMECHANGE). RequestSnapshot on MINIMIZESTART + NAMECHANGE. kTabSnapshotMsg handler: SetTabs+delete+invalidate. Debug OutputDebugString dump. F-T1 fix: worker exits immediately on m_stop (no drain-then-stop). Inspector burst (AppBar: clean; threading: F-T2 MTA/UIA dismissed — MTA is correct; F-T1 fixed inline) → adjudicator → MAY PROCEED. Build clean; runtime checkpoint pending on Windows. Next: 3.4.
 - 2026-07-03 — Step 3.2 done: second WinEvent hook (MINIMIZESTART..END); Store::SetMinimized; kWindowEventMsg fast-paths minimize events (bypass debounce); IsIconic check on initial scan; Renderer shows "<title> — minimized". Inspector burst (AppBar: F-A2 WM_ENDSESSION no-unhook — informational, ABM_REMOVE confirmed; threading: clean) → adjudicator → MAY PROCEED. Build clean; runtime checkpoint pending on Windows. Next: 3.3.
 - 2026-07-03 — Step 3.1 done: Store.{h,cpp} (Tab/TrackedWindow structs, HWND-keyed map, UI-thread-only). Migrated DockWindow::m_browsers→m_store:Store; Renderer now takes const Store&. Simplifier extracted StoreWindow helper. Inspector burst (AppBar: F-A1 pre-existing double-PostQuitMessage — safe, no double ABM_REMOVE; threading: F-T1 comment nit, F-T2 ordering note — both pre-existing) → adjudicator → MAY PROCEED. Build clean; runtime checkpoint pending on Windows. Next: 3.2.

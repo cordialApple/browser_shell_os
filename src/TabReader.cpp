@@ -25,7 +25,7 @@ std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
         return {};
 
     ComPtr<IUIAutomationElement> tabCtrl;
-    if (FAILED(elem->FindFirst(TreeScope_Descendants, tabCtrlCond, &tabCtrl)) || !tabCtrl)
+    if (FAILED(elem->FindFirst(TreeScope_Descendants, tabCtrlCond.Get(), &tabCtrl)) || !tabCtrl)
         return {};
 
     vt.lVal = UIA_TabItemControlTypeId;
@@ -34,7 +34,7 @@ std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
         return {};
 
     ComPtr<IUIAutomationElementArray> items;
-    if (FAILED(tabCtrl->FindAllBuildCache(TreeScope_Children, tabItemCond, cacheReq, &items))
+    if (FAILED(tabCtrl->FindAllBuildCache(TreeScope_Children, tabItemCond.Get(), cacheReq.Get(), &items))
             || !items)
         return {};
 
