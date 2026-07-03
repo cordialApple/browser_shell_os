@@ -11,6 +11,8 @@ namespace
     constexpr UINT    kCallbackMsg      = WM_APP + 1; // AppBar shell callback
     constexpr UINT    kWindowEventMsg   = WM_APP + 2; // WinEvent → dock thread
     constexpr int     kDockHeightDip    = 64;          // dock height at 96 DPI; scales with monitor DPI
+    constexpr UINT_PTR kDebounceTimer   = 1;
+    constexpr UINT    kDebounceMs       = 200;
 
     // Single-instance: safe to keep a plain HWND here for the WinEventProc callback.
     // Written on the UI thread in Create/WM_DESTROY; read on the same thread in WinEventProc
@@ -239,27 +241,43 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
     case kWindowEventMsg:
     {
+        // Coalesce burst: record HWND if not already pending, restart 200ms timer.
         HWND target = reinterpret_cast<HWND>(lparam);
-        const bool tracked = std::find(m_browsers.begin(), m_browsers.end(), target)
-                             != m_browsers.end();
-        if (IsBrowserFrame(target))
-        {
-            if (!tracked) m_browsers.push_back(target);
-        }
-        else
-        {
-            m_browsers.erase(std::remove(m_browsers.begin(), m_browsers.end(), target),
-                             m_browsers.end());
-        }
-        InvalidateRect(hwnd, nullptr, FALSE);
+        if (std::find(m_pendingValidation.begin(), m_pendingValidation.end(), target)
+                == m_pendingValidation.end())
+            m_pendingValidation.push_back(target);
+        SetTimer(hwnd, kDebounceTimer, kDebounceMs, nullptr);
         return 0;
     }
+
+    case WM_TIMER:
+        if (wparam == kDebounceTimer)
+        {
+            KillTimer(hwnd, kDebounceTimer);
+            for (HWND target : m_pendingValidation)
+            {
+                auto it = std::find(m_browsers.begin(), m_browsers.end(), target);
+                const bool tracked = (it != m_browsers.end());
+                if (IsBrowserFrame(target))
+                {
+                    if (!tracked) m_browsers.push_back(target);
+                }
+                else if (tracked)
+                {
+                    m_browsers.erase(it);
+                }
+            }
+            m_pendingValidation.clear();
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        return 0;
 
     case WM_RBUTTONUP:
         DestroyWindow(hwnd);
         return 0;
 
     case WM_DESTROY:
+        KillTimer(hwnd, kDebounceTimer);
         if (m_winEventHook) { UnhookWinEvent(m_winEventHook); m_winEventHook = nullptr; }
         s_dockHwnd = nullptr;
         AppBarRemove(hwnd);

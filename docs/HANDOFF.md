@@ -30,14 +30,15 @@ performance over ETW.
 |---|---|
 | Docs & plans | ✅ Complete (architecture + per-stage plans) |
 | Stage 1 — AppBar dock | ✅ Complete — all 7 steps + acceptance row passed on Win11 |
-| Stage 2 — browser detection | 🔄 In progress (step 2.3 done) |
+| Stage 2 — browser detection | ✅ Complete — all 4 steps done (§12 row 2 pending on Windows) |
 | Stage 3 — single-window tabs | ⬜ blocked on Stage 2 |
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
 | Stage 5 — taskbar buttons | ⬜ blocked on Stage 4 |
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 2, Step 2.4** — debounce + acceptance.
+**Next action: Stage 3 — single-window tabs** (`docs/plans/stage-3.md`).
+Stage 2 code complete; §12 row 2 acceptance pending on Windows before Stage 3 starts.
 
 Deferred debt:
 - [F-01 threading] g_dockHwnd non-atomic; CrashFilter reads from faulting thread. HARD GATE:
@@ -123,6 +124,12 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   kill checkpoint tests not formally observed (user moved on; Task Manager kill
   behavior deferred to 1.7 doc). Debug rect adjusted to (160,1645) for testing.
   Next: 1.5.
+- 2026-07-03 — Step 2.4 done: debounce via m_pendingValidation + 200ms SetTimer. kWindowEventMsg
+  deduplicates HWND into pending list + restarts timer. WM_TIMER drains list, validates each
+  HWND with IsBrowserFrame, updates m_browsers, repaints. KillTimer in WM_DESTROY. --scan
+  already #ifdef _DEBUG. Inspector burst (AppBar: clean; threading: F-T1 unbounded-pending
+  informational/no-fix; F-T2 dismissed) → adjudicator → MAY PROCEED. Stage 2 code complete;
+  §12 row 2 runtime acceptance pending on Windows. Next: Stage 3.
 - 2026-07-03 — Step 2.3 done: WinEventHook (EVENT_OBJECT_CREATE..HIDE, OUTOFCONTEXT,
   system-wide). WinEventProc pre-filters idObject==OBJID_WINDOW then PostMessage.
   kWindowEventMsg handler: IsBrowserFrame re-validate, add/remove m_browsers,
