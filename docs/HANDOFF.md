@@ -31,13 +31,13 @@ performance over ETW.
 | Docs & plans | ✅ Complete (architecture + per-stage plans) |
 | Stage 1 — AppBar dock | ✅ Complete — all 7 steps + acceptance row passed on Win11 |
 | Stage 2 — browser detection | ✅ Complete — all 4 steps + §12 row 2 accepted on Win11 |
-| Stage 3 — single-window tabs | ⬜ blocked on Stage 2 |
+| Stage 3 — single-window tabs | 🔄 in progress — step 3.1 done |
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
 | Stage 5 — taskbar buttons | ⬜ blocked on Stage 4 |
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 3 — single-window tabs** (`docs/plans/stage-3.md`).
+**Next action: Stage 3 step 3.2 — minimize/restore detection** (`docs/plans/stage-3.md`).
 
 Deferred debt:
 - [F-01 threading] g_dockHwnd non-atomic; CrashFilter reads from faulting thread. HARD GATE:
@@ -148,6 +148,7 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   ScanBrowserFrames. --scan debug flag in #ifdef _DEBUG. Inspector burst (AppBar: clean;
   threading: F-01 pre-existing deferred to 2.3, comment tightened) → adjudicator → MAY PROCEED.
   Build pending on Windows. Next: 2.2.
+- 2026-07-03 — Step 3.1 done: Store.{h,cpp} (Tab/TrackedWindow structs, HWND-keyed map, UI-thread-only). Migrated DockWindow::m_browsers→m_store:Store; Renderer now takes const Store&. Simplifier extracted StoreWindow helper. Inspector burst (AppBar: F-A1 pre-existing double-PostQuitMessage — safe, no double ABM_REMOVE; threading: F-T1 comment nit, F-T2 ordering note — both pre-existing) → adjudicator → MAY PROCEED. Build clean; runtime checkpoint pending on Windows. Next: 3.2.
 - 2026-07-03 — Step 1.3 done: WM_PAINT (dark fill + DPI-scaled Segoe UI 12pt
   via GetDpiForWindow+MulDiv), WM_ERASEBKGND→1, hbrBackground=nullptr,
   UpdateWindow after ShowWindow. Inspector burst (AppBar-hygiene, threading,
