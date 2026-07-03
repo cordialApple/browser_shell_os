@@ -123,6 +123,8 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   kill checkpoint tests not formally observed (user moved on; Task Manager kill
   behavior deferred to 1.7 doc). Debug rect adjusted to (160,1645) for testing.
   Next: 1.5.
+- 2026-07-03 — Stage 2 ACCEPTED on Win11: indicator shows Edge title + "(+1)" for Chrome,
+  "browser: none" when closed, live tracking works within ~1s, CPU ~0% idle.
 - 2026-07-03 — Step 2.4 done: debounce via m_pendingValidation + 200ms SetTimer. kWindowEventMsg
   deduplicates HWND into pending list + restarts timer. WM_TIMER drains list, validates each
   HWND with IsBrowserFrame, updates m_browsers, repaints. KillTimer in WM_DESTROY. --scan
