@@ -35,5 +35,6 @@ private:
     int               m_dockHeight       = 0;
     Store             m_store;
     std::vector<HWND> m_pendingValidation;
-    HWINEVENTHOOK     m_winEventHook     = nullptr;
+    HWINEVENTHOOK     m_winEventHook         = nullptr;
+    HWINEVENTHOOK     m_winEventHookMinimize = nullptr;
 };

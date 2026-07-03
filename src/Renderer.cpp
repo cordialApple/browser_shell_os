@@ -31,8 +31,15 @@ namespace Renderer
         else
         {
             const TrackedWindow& first = all.begin()->second;
-            label = L"browser: ";
-            label += first.title;
+            if (first.minimized)
+            {
+                label = first.title + L" — minimized";
+            }
+            else
+            {
+                label = L"browser: ";
+                label += first.title;
+            }
             if (all.size() > 1)
             {
                 wchar_t extra[32];

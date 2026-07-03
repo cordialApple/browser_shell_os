@@ -20,6 +20,7 @@ class Store
 {
 public:
     void Set(HWND hwnd, std::wstring title);
+    void SetMinimized(HWND hwnd, bool minimized);
     void Remove(HWND hwnd);
     bool Has(HWND hwnd) const;
     bool Empty() const { return m_windows.empty(); }

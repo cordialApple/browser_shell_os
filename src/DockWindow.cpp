@@ -1,6 +1,7 @@
 #include "DockWindow.h"
 #include "Renderer.h"
 #include "WindowMonitor.h"
+#include <algorithm>
 
 #pragma comment(lib, "shell32.lib")
 
@@ -88,6 +89,8 @@ bool DockWindow::Create(HINSTANCE instance)
     for (HWND h : ScanBrowserFrames())
     {
         StoreWindow(m_store, h);
+        if (IsIconic(h))
+            m_store.SetMinimized(h, true);
     }
 
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
@@ -96,6 +99,11 @@ bool DockWindow::Create(HINSTANCE instance)
     s_dockHwnd    = hwnd;
     m_winEventHook = SetWinEventHook(
         EVENT_OBJECT_CREATE, EVENT_OBJECT_HIDE,
+        nullptr, WinEventProc,
+        0, 0,
+        WINEVENT_OUTOFCONTEXT);
+    m_winEventHookMinimize = SetWinEventHook(
+        EVENT_SYSTEM_MINIMIZESTART, EVENT_SYSTEM_MINIMIZEEND,
         nullptr, WinEventProc,
         0, 0,
         WINEVENT_OUTOFCONTEXT);
@@ -250,8 +258,20 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
     case kWindowEventMsg:
     {
-        // Coalesce burst: record HWND if not already pending, restart 200ms timer.
-        HWND target = reinterpret_cast<HWND>(lparam);
+        HWND  target = reinterpret_cast<HWND>(lparam);
+        DWORD event  = static_cast<DWORD>(wparam);
+
+        if (event == EVENT_SYSTEM_MINIMIZESTART || event == EVENT_SYSTEM_MINIMIZEEND)
+        {
+            if (m_store.Has(target))
+            {
+                m_store.SetMinimized(target, event == EVENT_SYSTEM_MINIMIZESTART);
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
+            return 0;
+        }
+
+        // Coalesce create/show/hide burst: record HWND, restart 200ms timer.
         if (std::find(m_pendingValidation.begin(), m_pendingValidation.end(), target)
                 == m_pendingValidation.end())
             m_pendingValidation.push_back(target);
@@ -285,6 +305,7 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
     case WM_DESTROY:
         KillTimer(hwnd, kDebounceTimer);
+        if (m_winEventHookMinimize) { UnhookWinEvent(m_winEventHookMinimize); m_winEventHookMinimize = nullptr; }
         if (m_winEventHook) { UnhookWinEvent(m_winEventHook); m_winEventHook = nullptr; }
         s_dockHwnd = nullptr;
         AppBarRemove(hwnd);
