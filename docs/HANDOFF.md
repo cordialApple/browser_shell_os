@@ -29,7 +29,7 @@ performance over ETW.
 | Workstream | State |
 |---|---|
 | Docs & plans | ✅ Complete (architecture + per-stage plans) |
-| Stage 1 — AppBar dock | 🔶 In progress — 1.1 ✅ 1.2 ✅ 1.3 ✅ 1.4 ✅ 1.5 ✅, **NEXT → Step 1.6** (`docs/plans/stage-1.md`) |
+| Stage 1 — AppBar dock | 🔶 In progress — 1.1 ✅ 1.2 ✅ 1.3 ✅ 1.4 ✅ 1.5 ✅ 1.6 ✅, **NEXT → Step 1.7** (`docs/plans/stage-1.md`) |
 | Stage 2 — browser detection | ⬜ blocked on Stage 1 |
 | Stage 3 — single-window tabs | ⬜ blocked on Stage 2 |
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
@@ -37,15 +37,12 @@ performance over ETW.
 | Profiler (parallel workstream) | ⬜ unlocks when Stage 1 accepted (`docs/plans/profiler.md`) |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 1, Step 1.6 — Shell callback + display events.** See
-`docs/plans/stage-1.md`. Notes going into 1.6:
-- WS_EX_TOPMOST must be dropped when ABN_FULLSCREENAPP fires; restore when it ends.
-- ABN_POSCHANGED and ABN_STATECHANGE already call AppBarSetPos (wired in 1.5).
-- WM_DISPLAYCHANGE and WM_DPICHANGED already call AppBarSetPos (wired in 1.5).
-- Remaining 1.6 work: ABN_FULLSCREENAPP handler (topmost toggle).
-- Multi-monitor/mixed-DPI: APPBARDATA.rc coordinate-space unverified on non-system-DPI
-  secondary monitor — defer to stage that introduces multi-monitor support (F-01 from 1.5 adjudication).
-- Optional debt: guard `GetDpiForWindow==0` → default 96 before MulDiv.
+**Next action: Stage 1, Step 1.7 — Exit hygiene + single instance.** See
+`docs/plans/stage-1.md`. Notes going into 1.7:
+- WM_ENDSESSION/WM_QUERYENDSESSION: remove AppBar on logoff/shutdown.
+- Single instance: named mutex at startup; second launch exits immediately.
+- Crash safety: SetUnhandledExceptionFilter removes AppBar before dying (best-effort).
+- Deferred debt: F-01 mixed-DPI AppBarSetPos monitor/DPI-source mismatch — defer to multi-monitor stage.
 
 **Build note (this machine):** VS2022 Pro's C++ install now works — the
 canonical CLAUDE.md commands (`cmake -B build -G "Visual Studio 17 2022"`,
@@ -102,6 +99,11 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   2 suspicious dismissed) → adjudicator → MAY PROCEED. Checkpoint on Windows:
   dock flush above taskbar full-width ✅, Notepad maximize stops at dock edge ✅,
   exit→maximize→no gap ✅. Next: 1.6.
+- 2026-07-03 — Step 1.6 done: ABN_FULLSCREENAPP handler (SetWindowPos HWND_BOTTOM/HWND_TOPMOST on
+  lparam toggle) + GetDpiForWindow==0 guards in AppBarSetPos and WM_PAINT. Inspector burst
+  (AppBar-hygiene clean, threading clean, DPI: F-01 pre-existing deferred, F-02/F-03 nits) →
+  adjudicator → MAY PROCEED. Build verified; runtime checkpoint (taskbar-move, DPI-change,
+  fullscreen-video) pending on Windows. Next: 1.7.
 - 2026-07-03 — Step 1.4 done: ABM_NEW after ShowWindow (kCallbackMsg=WM_APP+1),
   AppBarRemove() helper with m_appBarRegistered guard, ABM_REMOVE in WM_DESTROY
   before PostQuitMessage, ~DockWindow covers GetMessage==-1 path, WS_EX_TOPMOST

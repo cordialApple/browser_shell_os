@@ -82,7 +82,9 @@ void DockWindow::AppBarSetPos(HWND hwnd)
     GetMonitorInfoW(hmon, &mi);
 
     // Scale dock height from 96-DPI baseline to this window's per-monitor DPI.
-    const int dpi = static_cast<int>(GetDpiForWindow(hwnd));
+    // Guard against 0 (before first WM_NCCREATE, or pre-Win10) → treat as 96.
+    const UINT rawDpi = GetDpiForWindow(hwnd);
+    const int dpi = rawDpi ? static_cast<int>(rawDpi) : 96;
     m_dockHeight = MulDiv(kDockHeightDip, dpi, 96);
 
     // Propose: full monitor width, bottom-anchored.
@@ -168,7 +170,8 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
         // DPI-scaled font. PMv2 owns all pixels; stock DC font is 96-DPI baseline
         // and renders too small at 150%. MulDiv(12, dpi, 72) converts 12pt → pixels.
-        const UINT dpi = GetDpiForWindow(hwnd);
+        const UINT rawDpi2 = GetDpiForWindow(hwnd);
+        const UINT dpi = rawDpi2 ? rawDpi2 : 96u;
         LOGFONTW lf = {};
         lf.lfHeight = -MulDiv(12, static_cast<int>(dpi), 72);
         lf.lfWeight = FW_NORMAL;
@@ -195,6 +198,14 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         if (wparam == ABN_POSCHANGED || wparam == ABN_STATECHANGE)
         {
             AppBarSetPos(hwnd);
+        }
+        else if (wparam == ABN_FULLSCREENAPP)
+        {
+            // lparam nonzero: fullscreen app active → yield topmost so it's not overlaid.
+            // lparam zero: fullscreen ended → reclaim topmost.
+            SetWindowPos(hwnd, lparam ? HWND_BOTTOM : HWND_TOPMOST,
+                         0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
         return 0;
 
