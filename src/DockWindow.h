@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <shellapi.h>
+#include <vector>
 
 // Dock window. UI thread only owns this (CLAUDE.md rule 5).
 class DockWindow
@@ -24,8 +25,9 @@ private:
     void AppBarRemove(HWND hwnd);
     void AppBarSetPos(HWND hwnd);   // ABM_QUERYPOS → re-anchor → ABM_SETPOS → SetWindowPos
 
-    HWND       m_hwnd             = nullptr;
-    APPBARDATA m_abd              = {};
-    bool       m_appBarRegistered = false;
-    int        m_dockHeight       = 0; // physical px, set once in Create, rescaled on WM_DPICHANGED
+    HWND              m_hwnd             = nullptr;
+    APPBARDATA        m_abd              = {};
+    bool              m_appBarRegistered = false;
+    int               m_dockHeight       = 0;
+    std::vector<HWND> m_browsers;        // tracked browser frames; UI thread only
 };

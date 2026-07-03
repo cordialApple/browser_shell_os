@@ -42,11 +42,11 @@ bool IsBrowserFrame(HWND hwnd)
         && IsTargetProcess(hwnd);
 }
 
-static BOOL CALLBACK EnumProc(HWND hwnd, LPARAM lp)
+static BOOL CALLBACK EnumProc(HWND hwnd, LPARAM lp) noexcept
 {
     auto* out = reinterpret_cast<std::vector<HWND>*>(lp);
-    if (IsBrowserFrame(hwnd))
-        out->push_back(hwnd);
+    try { if (IsBrowserFrame(hwnd)) out->push_back(hwnd); }
+    catch (...) {}
     return TRUE;
 }
 

@@ -8,6 +8,7 @@ add_executable(browser_shell_os WIN32
     src/main.cpp
     src/DockWindow.cpp
     src/WindowMonitor.cpp
+    src/Renderer.cpp
 )
 # Pin SDK target: Win10 RS3+. Need >= RS2 for DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2.
 target_compile_definitions(browser_shell_os PRIVATE

@@ -30,14 +30,14 @@ performance over ETW.
 |---|---|
 | Docs & plans | ✅ Complete (architecture + per-stage plans) |
 | Stage 1 — AppBar dock | ✅ Complete — all 7 steps + acceptance row passed on Win11 |
-| Stage 2 — browser detection | 🔄 In progress (step 2.1 done) |
+| Stage 2 — browser detection | 🔄 In progress (step 2.2 done) |
 | Stage 3 — single-window tabs | ⬜ blocked on Stage 2 |
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
 | Stage 5 — taskbar buttons | ⬜ blocked on Stage 4 |
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 2, Step 2.2** — initial scan + dock indicator.
+**Next action: Stage 2, Step 2.3** — live tracking via WinEvent hooks.
 
 Deferred debt:
 - [F-01 threading] g_dockHwnd non-atomic; CrashFilter reads from faulting thread. HARD GATE:
@@ -123,6 +123,11 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   kill checkpoint tests not formally observed (user moved on; Task Manager kill
   behavior deferred to 1.7 doc). Debug rect adjusted to (160,1645) for testing.
   Next: 1.5.
+- 2026-07-03 — Step 2.2 done: Renderer.{h,cpp} with Renderer::Paint (dark bg + DPI-scaled
+  indicator: "browser: none" vs "browser: <title> (+N)"). ScanBrowserFrames() called in
+  Create() before ShowWindow to populate m_browsers. EnumProc made noexcept+try/catch
+  (F-A1 warning fix). Inspector burst (AppBar: F-A1 fixed; threading: F-T1/F-T2 dismissed) →
+  adjudicator → MAY PROCEED. Build/runtime pending on Windows. Next: 2.3.
 - 2026-07-03 — Step 2.1 done: WindowMonitor.{h,cpp} with IsBrowserFrame (Chrome_WidgetWin_1,
   visible, unowned, non-empty title, chrome.exe/msedge.exe via QueryFullProcessImageNameW) +
   ScanBrowserFrames. --scan debug flag in #ifdef _DEBUG. Inspector burst (AppBar: clean;

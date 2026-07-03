@@ -1,4 +1,6 @@
 #include "DockWindow.h"
+#include "Renderer.h"
+#include "WindowMonitor.h"
 
 #pragma comment(lib, "shell32.lib")
 
@@ -67,6 +69,8 @@ bool DockWindow::Create(HINSTANCE instance)
 
     // Negotiate and commit position before making window visible.
     AppBarSetPos(hwnd);
+
+    m_browsers = ScanBrowserFrames();
 
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     UpdateWindow(hwnd);
@@ -159,36 +163,9 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
-
         RECT rc;
         GetClientRect(hwnd, &rc);
-
-        // Dark background fill
-        HBRUSH bg = CreateSolidBrush(RGB(28, 28, 30));
-        FillRect(hdc, &rc, bg);
-        DeleteObject(bg);
-
-        // DPI-scaled font. PMv2 owns all pixels; stock DC font is 96-DPI baseline
-        // and renders too small at 150%. MulDiv(12, dpi, 72) converts 12pt → pixels.
-        const UINT rawDpi2 = GetDpiForWindow(hwnd);
-        const UINT dpi = rawDpi2 ? rawDpi2 : 96u;
-        LOGFONTW lf = {};
-        lf.lfHeight = -MulDiv(12, static_cast<int>(dpi), 72);
-        lf.lfWeight = FW_NORMAL;
-        lf.lfCharSet = DEFAULT_CHARSET;
-        lf.lfQuality = CLEARTYPE_QUALITY;
-        wcscpy_s(lf.lfFaceName, L"Segoe UI");
-        HFONT font = CreateFontIndirectW(&lf);
-        HFONT oldFont = static_cast<HFONT>(SelectObject(hdc, font));
-
-        // Centered label
-        SetBkMode(hdc, TRANSPARENT);
-        SetTextColor(hdc, RGB(220, 220, 220));
-        DrawTextW(hdc, L"browser_shell_os dock", -1, &rc,
-                  DT_CENTER | DT_VCENTER | DT_SINGLELINE);
-
-        SelectObject(hdc, oldFont);
-        DeleteObject(font);
+        Renderer::Paint(hdc, rc, GetDpiForWindow(hwnd), m_browsers);
         EndPaint(hwnd, &ps);
         return 0;
     }
