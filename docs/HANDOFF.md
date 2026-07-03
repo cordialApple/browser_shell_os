@@ -29,7 +29,7 @@ performance over ETW.
 | Workstream | State |
 |---|---|
 | Docs & plans | ✅ Complete (architecture + per-stage plans) |
-| Stage 1 — AppBar dock | 🔶 In progress — 1.1 ✅ 1.2 ✅ 1.3 ✅, **NEXT → Step 1.4** (`docs/plans/stage-1.md`) |
+| Stage 1 — AppBar dock | 🔶 In progress — 1.1 ✅ 1.2 ✅ 1.3 ✅ 1.4 ✅, **NEXT → Step 1.5** (`docs/plans/stage-1.md`) |
 | Stage 2 — browser detection | ⬜ blocked on Stage 1 |
 | Stage 3 — single-window tabs | ⬜ blocked on Stage 2 |
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
@@ -37,16 +37,14 @@ performance over ETW.
 | Profiler (parallel workstream) | ⬜ unlocks when Stage 1 accepted (`docs/plans/profiler.md`) |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 1, Step 1.4 — AppBar registration + removal.** See
-`docs/plans/stage-1.md`. Mandatory carry-overs from 1.2/1.3 review:
-- Add `~DockWindow()` calling `DestroyWindow(m_hwnd)` so abnormal exit paths
-  (GetMessage -1) reach `WM_DESTROY`→`ABM_REMOVE`.
-- In `WM_DESTROY`: do ABM_REMOVE using the `hwnd` WndProc param (NOT `m_hwnd`),
-  null `m_hwnd` LAST.
-- Revisit whether `WS_EX_TOPMOST` stays once the AppBar is registered.
-- Optional debt: guard `GetDpiForWindow==0` → default 96 before MulDiv (F-01 from 1.3 adjudication).
-- Edge-case research for 1.5–1.7 and Stages 2–5 lives in
-  `docs/research/win32-edge-cases.md` (auto-hide, multi-monitor, Win11 UIA).
+**Next action: Stage 1, Step 1.5 — Position negotiation (the reserved strip).** See
+`docs/plans/stage-1.md`. Notes going into 1.5:
+- Debug rect now at (160, 1645) — replace entirely with ABM_QUERYPOS/SETPOS logic.
+- WS_EX_TOPMOST kept; Step 1.6 drops it for fullscreen apps only.
+- Task Manager kill leaves dead reserved space (expected — motivates Step 1.7); not
+  formally observed this session (user moved on), document in 1.7 checkpoint.
+- Optional debt: guard `GetDpiForWindow==0` → default 96 before MulDiv.
+- Edge-case research: `docs/research/win32-edge-cases.md`.
 
 **Build note (this machine):** VS2022 Pro's C++ install now works — the
 canonical CLAUDE.md commands (`cmake -B build -G "Visual Studio 17 2022"`,
@@ -95,6 +93,14 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   Opus verifier: 2 fixes applied (WS_EX_NOACTIVATE, rationale comments),
   5 deferred as carry-overs above, 5 rejected. 3 research agents' Win32
   edge-case findings saved to docs/research/win32-edge-cases.md. Next: 1.3.
+- 2026-07-03 — Step 1.4 done: ABM_NEW after ShowWindow (kCallbackMsg=WM_APP+1),
+  AppBarRemove() helper with m_appBarRegistered guard, ABM_REMOVE in WM_DESTROY
+  before PostQuitMessage, ~DockWindow covers GetMessage==-1 path, WS_EX_TOPMOST
+  kept. Inspector burst (AppBar-hygiene, threading) → adjudicator → MAY PROCEED
+  (all findings informational). ABM_NEW confirmed working (window visible); gap/
+  kill checkpoint tests not formally observed (user moved on; Task Manager kill
+  behavior deferred to 1.7 doc). Debug rect adjusted to (160,1645) for testing.
+  Next: 1.5.
 - 2026-07-03 — Step 1.3 done: WM_PAINT (dark fill + DPI-scaled Segoe UI 12pt
   via GetDpiForWindow+MulDiv), WM_ERASEBKGND→1, hbrBackground=nullptr,
   UpdateWindow after ShowWindow. Inspector burst (AppBar-hygiene, threading,

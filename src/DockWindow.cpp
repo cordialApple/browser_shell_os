@@ -1,12 +1,25 @@
 #include "DockWindow.h"
 
+#pragma comment(lib, "shell32.lib")
+
 namespace
 {
     constexpr wchar_t kClassName[] = L"BrowserShellOsDockWindow";
+    constexpr UINT    kCallbackMsg = WM_APP + 1; // AppBar shell callback
 
     // Debug rect for 1.2. Real size come from AppBar negotiation in 1.5.
-    constexpr int kDebugWidth = 800;
+    constexpr int kDebugWidth = 550;
     constexpr int kDebugHeight = 64;
+}
+
+DockWindow::~DockWindow()
+{
+    // Covers GetMessage==-1 abnormal exit: destructor fires, window not yet
+    // destroyed, so we destroy it here to guarantee WM_DESTROY→AppBarRemove.
+    if (m_hwnd)
+    {
+        DestroyWindow(m_hwnd);
+    }
 }
 
 bool DockWindow::Create(HINSTANCE instance)
@@ -23,15 +36,13 @@ bool DockWindow::Create(HINSTANCE instance)
         return false;
     }
 
-    // Center on primary monitor. Process per-monitor-v2 aware, so these
-    // metrics = physical pixels of primary.
-    const int screenW = GetSystemMetrics(SM_CXSCREEN);
-    const int screenH = GetSystemMetrics(SM_CYSCREEN);
-    const int x = (screenW - kDebugWidth) / 2;
-    const int y = (screenH - kDebugHeight) / 2;
+    // Debug position: bottom-left above taskbar. Replaced by AppBar negotiation in 1.5.
+    const int x = 160;
+    const int y = 1645;
 
-    // WS_EX_TOOLWINDOW: no taskbar button, no Alt-Tab. WS_EX_TOPMOST: float.
-    // WS_EX_NOACTIVATE: dock never take foreground on click.
+    // WS_EX_TOOLWINDOW: no taskbar button, no Alt-Tab. WS_EX_TOPMOST: stay
+    // visible; AppBar alone does not guarantee z-order. WS_EX_NOACTIVATE: dock
+    // never steals foreground. Step 1.6 drops TOPMOST for fullscreen apps.
     const HWND hwnd = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
         kClassName,
@@ -49,6 +60,18 @@ bool DockWindow::Create(HINSTANCE instance)
     m_hwnd = hwnd;
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     UpdateWindow(hwnd); // force immediate WM_PAINT before message loop
+
+    // Register AppBar. Position negotiation (ABM_QUERYPOS/SETPOS) is step 1.5.
+    m_abd        = {};
+    m_abd.cbSize = sizeof(m_abd);
+    m_abd.hWnd   = hwnd;
+    m_abd.uCallbackMessage = kCallbackMsg;
+    if (!SHAppBarMessage(ABM_NEW, &m_abd))
+    {
+        DestroyWindow(hwnd);
+        return false;
+    }
+    m_appBarRegistered = true;
     return true;
 }
 
@@ -76,6 +99,14 @@ LRESULT CALLBACK DockWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, L
         return self->WndProc(hwnd, msg, wparam, lparam);
     }
     return DefWindowProcW(hwnd, msg, wparam, lparam);
+}
+
+void DockWindow::AppBarRemove(HWND hwnd)
+{
+    if (!m_appBarRegistered) return;
+    m_appBarRegistered = false;
+    m_abd.hWnd = hwnd; // use WndProc param, not m_hwnd (may already be null)
+    SHAppBarMessage(ABM_REMOVE, &m_abd);
 }
 
 LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
@@ -130,8 +161,9 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         return 0;
 
     case WM_DESTROY:
-        m_hwnd = nullptr;
+        AppBarRemove(hwnd); // must precede PostQuitMessage; uses hwnd param not m_hwnd
         PostQuitMessage(0);
+        m_hwnd = nullptr;   // null last so AppBarRemove can use it if needed
         return 0;
     }
     return DefWindowProcW(hwnd, msg, wparam, lparam);
