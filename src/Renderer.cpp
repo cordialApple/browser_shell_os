@@ -1,5 +1,6 @@
 ﻿#include "Renderer.h"
 #include <string>
+#include <vector>
 
 namespace
 {
@@ -123,63 +124,36 @@ namespace Renderer
         DeleteObject(bg);
 
         const int dpiI = dpi ? static_cast<int>(dpi) : 96;
-        const auto& all = store.All();
 
-        if (all.empty())
+        // The dock surfaces what you can't already see: only minimized windows.
+        std::vector<const TrackedWindow*> mins;
+        for (const auto& [hwnd, w] : store.All())
+            if (w.minimized) mins.push_back(&w);
+
+        if (mins.empty())
         {
             HFONT font    = MakeFont(12, FW_NORMAL, dpiI);
             HFONT oldFont = static_cast<HFONT>(SelectObject(hdc, font));
             SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, kTextPrimary);
+            SetTextColor(hdc, kTextSecond);
             RECT textRc = rc;
-            DrawTextW(hdc, L"browser: none", -1, &textRc,
+            DrawTextW(hdc, L"no minimized browsers", -1, &textRc,
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             SelectObject(hdc, oldFont);
             DeleteObject(font);
             return;
         }
 
-        const int pad = ScalePx(4, dpiI);
-        const int rcW = rc.right - rc.left;
+        const int pad   = ScalePx(4, dpiI);
+        const int rcW   = rc.right - rc.left;
+        const int n     = static_cast<int>(mins.size());
+        const int cardW = (rcW - pad * (n + 1)) / n;
+        int x           = rc.left + pad;
 
-        int nonMinCount = 0;
-        for (const auto& [hwnd, w] : all)
-            if (!w.minimized) ++nonMinCount;
-
-        if (nonMinCount > 0)
-        {
-            const TrackedWindow* first = nullptr;
-            for (const auto& [hwnd, w] : all)
-                if (!w.minimized) { first = &w; break; }
-
-            std::wstring label = L"browser: " + first->title;
-            if (all.size() > 1)
-            {
-                wchar_t extra[32];
-                swprintf_s(extra, L" (+%zu)", all.size() - 1);
-                label += extra;
-            }
-
-            HFONT font    = MakeFont(12, FW_NORMAL, dpiI);
-            HFONT oldFont = static_cast<HFONT>(SelectObject(hdc, font));
-            SetBkMode(hdc, TRANSPARENT);
-            SetTextColor(hdc, kTextPrimary);
-            RECT textRc = rc;
-            DrawTextW(hdc, label.c_str(), -1, &textRc,
-                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-            SelectObject(hdc, oldFont);
-            DeleteObject(font);
-            return;
-        }
-
-        int minCount = static_cast<int>(all.size());
-        int cardW    = (rcW - pad * (minCount + 1)) / minCount;
-        int x        = rc.left + pad;
-
-        for (const auto& [hwnd, win] : all)
+        for (const TrackedWindow* w : mins)
         {
             RECT cardRc = { x, rc.top + pad, x + cardW, rc.bottom - pad };
-            DrawCard(hdc, cardRc, win, dpiI);
+            DrawCard(hdc, cardRc, *w, dpiI);
             x += cardW + pad;
         }
     }
