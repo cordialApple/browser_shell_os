@@ -29,17 +29,16 @@ performance over ETW.
 | Workstream | State |
 |---|---|
 | Docs & plans | ✅ Complete (architecture + per-stage plans) |
-| Stage 1 — AppBar dock | 🔶 All 7 steps coded ✅ — **NEXT: run Stage 1 acceptance row (§12) on Windows** to close Stage 1 |
-| Stage 2 — browser detection | ⬜ blocked on Stage 1 |
+| Stage 1 — AppBar dock | ✅ Complete — all 7 steps + acceptance row passed on Win11 |
+| Stage 2 — browser detection | ⬜ **NEXT** (Stage 1 complete) |
 | Stage 3 — single-window tabs | ⬜ blocked on Stage 2 |
 | Stage 4 — multi-window stacks | ⬜ blocked on Stage 3 |
 | Stage 5 — taskbar buttons | ⬜ blocked on Stage 4 |
-| Profiler (parallel workstream) | ⬜ unlocks when Stage 1 accepted (`docs/plans/profiler.md`) |
+| Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Run Stage 1 acceptance row (`docs/ARCHITECTURE.md` §12) on Windows.**
-All seven steps are coded and build clean. Acceptance tests must pass on real Win10/11 to
-close Stage 1 and unlock Stage 2 + profiler workstream.
+**Next action: Stage 2 — browser detection** (`docs/plans/stage-2.md`).
+Stage 1 fully accepted on Win11. Profiler workstream also now unlocked.
 
 Deferred debt going into Stage 2:
 - [F-01 threading] Crash filter calls SHAppBarMessage on faulting thread + g_dockHwnd is
@@ -102,6 +101,10 @@ one line to the session log. Keep this file short — prune, don't accumulate.
   2 suspicious dismissed) → adjudicator → MAY PROCEED. Checkpoint on Windows:
   dock flush above taskbar full-width ✅, Notepad maximize stops at dock edge ✅,
   exit→maximize→no gap ✅. Next: 1.6.
+- 2026-07-03 — Stage 1 ACCEPTED on Win11: dock visible ✅, Notepad stops at dock edge ✅,
+  exit releases strip ✅, ABN_POSCHANGED (auto-hide toggle) renegotiates ✅ (taskbar-to-left
+  not testable on Win11 — taskbar locked to bottom), second instance exits immediately ✅,
+  fullscreen video dock steps aside ✅. Stage 2 + profiler workstream unlocked.
 - 2026-07-03 — Step 1.7 done: single-instance named mutex (CreateMutexW/ERROR_ALREADY_EXISTS),
   WM_QUERYENDSESSION→TRUE + WM_ENDSESSION(wParam!=0)→AppBarRemove+PostQuitMessage,
   SetUnhandledExceptionFilter crash filter (best-effort ABM_REMOVE, EXCEPTION_CONTINUE_SEARCH).
