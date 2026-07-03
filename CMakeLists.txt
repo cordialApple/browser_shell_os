@@ -13,6 +13,7 @@ add_executable(browser_shell_os WIN32
     src/TabReader.cpp
 )
 # Pin SDK target: Win10 RS3+. Need >= RS2 for DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2.
+target_compile_options(browser_shell_os PRIVATE /utf-8)
 target_compile_definitions(browser_shell_os PRIVATE
     UNICODE _UNICODE
     _WIN32_WINNT=0x0A00

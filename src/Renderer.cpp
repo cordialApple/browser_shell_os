@@ -1,4 +1,4 @@
-#include "Renderer.h"
+﻿#include "Renderer.h"
 #include <string>
 
 namespace
@@ -48,7 +48,7 @@ namespace
         std::wstring tabLine;
         for (size_t i = 0; i < win.tabs.size(); ++i)
         {
-            if (i > 0) tabLine += L"  ·  ";
+            if (i > 0) tabLine += L"  Â·  ";
             tabLine += win.tabs[i].title;
         }
         if (win.tabsStale)
@@ -136,3 +136,4 @@ namespace Renderer
         }
     }
 }
+
