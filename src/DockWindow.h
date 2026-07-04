@@ -7,6 +7,7 @@
 #include "Store.h"
 #include "TabReader.h"
 #include "FanPopup.h"
+#include "Launcher.h"
 
 // Dock window. UI thread only owns this (CLAUDE.md rule 5).
 class DockWindow
@@ -50,6 +51,7 @@ private:
     HWINEVENTHOOK     m_winEventHookForeground = nullptr;
     std::unique_ptr<TabReader> m_tabReader;
     std::unique_ptr<FanPopup>  m_fanPopup;
+    Launcher                   m_launcher;
     HWND                       m_hoverCard    = nullptr;
     bool                       m_mouseTracking = false;
 };

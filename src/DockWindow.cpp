@@ -131,6 +131,8 @@ bool DockWindow::Create(HINSTANCE instance)
     m_fanPopup = std::make_unique<FanPopup>();
     m_fanPopup->Create(instance);
 
+    m_launcher.Load();  // Stage 5a: automation-button config (render/execute land in 5a.2–5a.3)
+
     return true;
 }
 

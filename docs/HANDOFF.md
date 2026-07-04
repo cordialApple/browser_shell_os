@@ -33,16 +33,17 @@ performance over ETW.
 | Stage 2 — browser detection | ✅ Complete — all 4 steps + §12 row 2 accepted on Win11 |
 | Stage 3 — single-window tabs | ✅ Complete — tabs render per-window on minimize, accepted on Win11 |
 | Stage 4 — multi-window stacks | 🟡 code complete (4.1–4.5 + 4.5a) — §12 row 4 acceptance pending on Windows |
-| Stage 5 — taskbar buttons | ⬜ blocked on Stage 4 |
+| Stage 5 — taskbar buttons | 🟡 in progress — 5a.1 (config load) done; next 5a.2 actions |
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 5a.1 — Launcher config load** (non-visual). See `docs/plans/stage-5.md`.
-Stage 4 code complete incl. 4.5b vertical-stack refinement (dynamic dock height: one ~34-DIP band
-per minimized window, reserved height grows/shrinks with count, capped kMaxBands=4). Colors now
-bg #00A2ED, active chip #f87e73. All MAY PROCEED. Pending user runtime/visual check: dock grows as
-windows minimize, colors render, empty-state legible. User rule: only gate Stage-5 changes that need
-a visual look; proceed autonomously otherwise.
+**Next action: Stage 5a.2 — Launcher actions** (non-visual: url/shortcut→ShellExecuteW,
+command→CreateProcessW, fire-and-forget). See `docs/plans/stage-5.md`. 5a.3 (button strip render +
+clicks) IS visual → gate for user acceptance. User rule: only gate Stage-5 changes that need a visual
+look; proceed autonomously otherwise.
+Done this session: Stage 4 complete incl. 4.5b vertical-stack (dynamic dock height, bands grow/shrink
+with count, cap 4) + recolor (bg #00A2ED, active #f87e73); Stage 5a.1 config load (line-based
+config.txt). Pending user runtime/visual check: dock grows as windows minimize, colors render.
 
 Deferred debt:
 - [renderer-tiny-card] Very narrow cards (rowW < ~48px, i.e. many minimized windows) drop the
@@ -86,6 +87,12 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-04 — Stage 5a.1 done: Launcher.{h,cpp} line-based config load (config.txt,
+  style|label|action|target|iconPath, BOM/UTF-8 decode, malformed→skip+debug, missing→zero). Chose
+  line-based over JSON per hard rule 2. Loaded in DockWindow::Create. Two bursts (parsing + resource
+  hygiene): fixed swprintf_s process-kill (→_snwprintf_s/_TRUNCATE), misaligned-wchar_t UB (→memcpy),
+  unchecked MBTWC guard, dropped redundant link pragma → re-burst clean → MAY PROCEED. Simplifier
+  folded a DebugPrintf helper. Build clean. Next: 5a.2 actions.
 - 2026-07-04 — Stage 4 refinement (4.5b): real vertical window stacking. CardLayout stacks full-width
   bands top→bottom (was side-by-side); dock height now DYNAMIC (DockHeightPx: one kBandHeightDip=34
   band per minimized window + pad, clamped 1..kMaxBands=4), AppBarSetPos re-negotiated on minimize

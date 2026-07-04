@@ -7,17 +7,24 @@ overlay) begins; 5a remains the permanent fallback.
 
 ## Phase 5a — buttons hosted in the dock strip
 
-### Step 5a.1 — Config load
-**Build:** `src/Launcher.{h,cpp}`: read
-`%LOCALAPPDATA%\browser_shell_os\config.json` at startup — array of buttons
-`{ id, style: "pill"|"icon", label, iconPath?, action: "url"|"shortcut"|
-"command", target }`. Hand-rolled minimal JSON parse or a single-header
-parser ONLY with explicit approval (hard rule 2); otherwise a simple
-line-based format is acceptable for minimum functionality. Missing file →
-zero buttons, no error.
+### Step 5a.1 — Config load ✅ (done 2026-07-04)
+**Built:** `src/Launcher.{h,cpp}`. Chose the plan's line-based format (not JSON)
+to honor hard rule 2 (no dep) and avoid a fragile hand-rolled JSON parser:
+`%LOCALAPPDATA%\browser_shell_os\config.txt`, one button per line
+`style|label|action|target|iconPath?` (`style`∈pill|icon, `action`∈url|shortcut|
+command). Blank / `#` / `;` lines ignored; malformed lines skipped with
+`OutputDebugStringW` reason; missing file → zero buttons. Decodes UTF-16LE-BOM /
+UTF-8-BOM / raw-UTF-8. `Button` struct + `Launcher::Buttons()` accessor for
+5a.2/5a.3. Loaded synchronously in `DockWindow::Create` (startup, like
+`ScanBrowserFrames`). Two inspector bursts (parsing-robustness + resource-
+hygiene): fixed a swprintf_s-overflow process-kill (→ `_snwprintf_s`/`_TRUNCATE`),
+a misaligned-wchar_t UB (→ memcpy), an unchecked MBTWC size-query, dropped a
+redundant link pragma → re-burst clean → adjudicator MAY PROCEED. Sample config
+written to the config path for the runtime check.
 
 **Checkpoint:** config with 2 buttons loads; malformed file → dock still
-starts, buttons skipped, `OutputDebugStringW` notes why.
+starts, buttons skipped, `OutputDebugStringW` notes why. (Runtime check pending
+on Windows via debugger; render/execute land in 5a.2–5a.3.)
 
 ### Step 5a.2 — Actions
 **Build:** `Launcher::Execute(button)`: `url` → `ShellExecuteW(open, target)`
