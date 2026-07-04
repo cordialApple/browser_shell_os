@@ -92,6 +92,14 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-04 — Feature DESIGN (parallel thread): `docs/plans/feature-interactive-fan.md` — interactive fan
+  (click a fan row → restore+foreground→worker re-snapshot→title-match→SelectionItemPattern.Select) +
+  empty-state "no cards, keep fallback buttons" (option a, no AppBar churn). Fable steered (UIA Select not
+  synthetic input; staleness = re-snapshot at click, never wrong tab; hover-bridge union+grace; empty-state
+  paint-only). win32-scout resolved R1 (NOACTIVATE click → SetForegroundWindow works, no ASFW; MA_NOACTIVATE
+  mandatory) + R2 (SelectionItemPattern supported; gate on IsWindowVisible&&!IsIconic + TabControl retry, no
+  fixed sleep, Select S_OK-silent-fails early; fallback SetFocus→LegacyIAccessible, NOT Invoke). Design only,
+  no src/ changes. Open UX call: close fan on click vs on confirm. Ready to implement (spikes→5 steps).
 - 2026-07-04 — Profiler consumer P.2–P.4 built (separate `shell_profiler` target under `profiler/`,
   own CMakeLists, zero shared shell code — hard rule 8). EtwSession: name-derived provider GUID
   (SHA-1/EventSource algo, runtime — no hardcoded GUID; verified `{C943A625-2D01-532A-B9E9-19613974D9AD}`
