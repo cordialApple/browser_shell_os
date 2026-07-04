@@ -102,6 +102,32 @@ namespace
         SelectObject(hdc, old);
         DeleteObject(tabFont);
     }
+
+    void DrawButton(HDC hdc, const RECT& rc, const Button& b, int dpiI)
+    {
+        HBRUSH br  = CreateSolidBrush(kButtonBg);
+        HPEN   pen = CreatePen(PS_SOLID, (std::max)(1, ScalePx(1, dpiI)), kButtonBorder);
+        HGDIOBJ ob = SelectObject(hdc, br);
+        HGDIOBJ op = SelectObject(hdc, pen);
+        const int r = (std::min)(ScalePx(6, dpiI), static_cast<int>(rc.bottom - rc.top) / 2);
+        RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, r, r);
+        SelectObject(hdc, op);
+        SelectObject(hdc, ob);
+        DeleteObject(pen);
+        DeleteObject(br);
+
+        HFONT font = MakeFont(9, FW_MEDIUM, dpiI);
+        HGDIOBJ of = SelectObject(hdc, font);
+        SetBkMode(hdc, TRANSPARENT);
+        SetTextColor(hdc, kTextOnBg);
+        const int tp = ScalePx(6, dpiI);
+        RECT txt = { rc.left + tp, rc.top, rc.right - tp, rc.bottom };
+        if (txt.right > txt.left)
+            DrawTextW(hdc, b.label.c_str(), -1, &txt,
+                      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        SelectObject(hdc, of);
+        DeleteObject(font);
+    }
 }
 
 namespace Renderer
@@ -138,7 +164,39 @@ namespace Renderer
         return cards;
     }
 
-    void Paint(HDC hdc, const RECT& rc, UINT dpi, const Store& store)
+    std::vector<ButtonHit> ButtonLayout(const RECT& rc, UINT dpi,
+                                        const std::vector<Button>& buttons)
+    {
+        std::vector<ButtonHit> hits;
+        const int n = static_cast<int>(buttons.size());
+        if (n == 0) return hits;
+
+        const int dpiI  = dpi ? static_cast<int>(dpi) : 96;
+        const int pad   = ScalePx(4, dpiI);
+        const int gap   = ScalePx(4, dpiI);
+        const int pillW = ScalePx(84, dpiI);
+        const int pillH = (std::min)(ScalePx(22, dpiI), static_cast<int>(rc.bottom - rc.top) - 2 * pad);
+        if (pillH < 1) return hits;
+
+        // As many as fit in the strip width; right-anchored group in the top corner.
+        int fit = (rc.right - rc.left - 2 * pad + gap) / (pillW + gap);
+        if (fit < 0) fit = 0;
+        const int show = (std::min)(n, fit);
+        if (show == 0) return hits;
+
+        const int top = rc.top + pad;
+        int x = rc.right - pad - (show * pillW + (show - 1) * gap);
+        hits.reserve(show);
+        for (int i = 0; i < show; ++i)
+        {
+            hits.push_back({ { x, top, x + pillW, top + pillH }, i });
+            x += pillW + gap;
+        }
+        return hits;
+    }
+
+    void Paint(HDC hdc, const RECT& rc, UINT dpi, const Store& store,
+               const std::vector<Button>& buttons)
     {
         HBRUSH bg = CreateSolidBrush(kBgColor);
         FillRect(hdc, &rc, bg);
@@ -158,16 +216,21 @@ namespace Renderer
                       DT_CENTER | DT_VCENTER | DT_SINGLELINE);
             SelectObject(hdc, oldFont);
             DeleteObject(font);
-            return;
+        }
+        else
+        {
+            const auto& all = store.All();
+            for (const CardHit& c : cards)
+            {
+                auto it = all.find(c.hwnd);
+                if (it != all.end())
+                    DrawCard(hdc, c.rect, it->second, dpiI);
+            }
         }
 
-        const auto& all = store.All();
-        for (const CardHit& c : cards)
-        {
-            auto it = all.find(c.hwnd);
-            if (it != all.end())
-                DrawCard(hdc, c.rect, it->second, dpiI);
-        }
+        // Buttons overlay the cards (drawn last), pinned top-right.
+        for (const ButtonHit& h : ButtonLayout(rc, dpi, buttons))
+            DrawButton(hdc, h.rect, buttons[h.index], dpiI);
     }
 }
 

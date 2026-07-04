@@ -34,6 +34,7 @@ private:
     int  DockHeightPx(UINT dpi) const;
     void ShowFanFor(HWND card);
     HWND CardAt(POINT ptClient) const;
+    int  ButtonAt(POINT ptClient) const;
     void RestoreWindow(HWND target);
     void ClearHover();
     void RequestSnapshotDebounced(HWND hwnd);
@@ -54,5 +55,4 @@ private:
     Launcher                   m_launcher;
     HWND                       m_hoverCard    = nullptr;
     bool                       m_mouseTracking = false;
-    size_t                     m_debugExecIdx = 0;
 };

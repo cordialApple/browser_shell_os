@@ -33,17 +33,17 @@ performance over ETW.
 | Stage 2 — browser detection | ✅ Complete — all 4 steps + §12 row 2 accepted on Win11 |
 | Stage 3 — single-window tabs | ✅ Complete — tabs render per-window on minimize, accepted on Win11 |
 | Stage 4 — multi-window stacks | 🟡 code complete (4.1–4.5 + 4.5a) — §12 row 4 acceptance pending on Windows |
-| Stage 5 — taskbar buttons | 🟡 in progress — 5a.1 config + 5a.2 actions done; next 5a.3 button strip (VISUAL — gate) |
+| Stage 5 — taskbar buttons | 🟡 in progress — 5a.1–5a.3 built (dock-hosted buttons); 5a.3 awaiting user visual OK; next 5a.4 hot-reload |
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 5a.3 — button strip rendering + clicks (VISUAL → gate for user acceptance).**
-Renderer draws pill/icon buttons at dock's right end; hit-test routes clicks to Launcher::Execute.
-See `docs/plans/stage-5.md`. User rule: only gate Stage-5 changes needing a visual look; 5a.3 qualifies.
+**Next action: user visual acceptance of 5a.3 button strip, then Stage 5a.4 — config hot-reload**
+(ReadDirectoryChangesW on a worker → post to dock → reload+repaint; non-visual). See `stage-5.md`.
 Done this session: Stage 4 complete incl. 4.5b vertical-stack (dynamic dock height, cap 4) + recolor
-(bg #00A2ED, active #f87e73); Stage 5a.1 config load + 5a.2 actions (Launcher::Execute, detached MTA
-worker). Pending user runtime/visual check: dock grows as windows minimize, colors render; middle-click
-(debug) fires configured buttons.
+(bg #00A2ED, active #f87e73); Stage 5a.1 config load + 5a.2 actions + 5a.3 button strip (right-column
+overlay pills, left-click → Launcher::Execute). Pending user runtime/visual check: dock grows as windows
+minimize; colors; pill buttons top-right; click a pill opens its url/shortcut. Sample config.txt (2 url
+buttons) already written to %LOCALAPPDATA%\browser_shell_os\.
 
 Deferred debt:
 - [renderer-tiny-card] Very narrow cards (rowW < ~48px, i.e. many minimized windows) drop the
@@ -87,6 +87,13 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-04 — Stage 5a.3 done (awaiting user visual OK): button strip. User chose right-column overlay
+  (pills top-right over cards). Renderer::ButtonLayout (single paint+hit-test source) + DrawButton
+  (RoundRect light kButtonBg pill, radius clamp, ellipsized label). Paint draws buttons last. DockWindow
+  ButtonAt + WM_LBUTTONUP button-first→card routing + WM_MOUSEMOVE fan-suppress; dropped 5a.2 debug
+  middle-click. Burst (DPI/visual/GDI+hit-test): fixed BLOCKING pill invisibility over dark cards
+  (→light kButtonBg+dark text), unscaled pen, unclamped radius → re-burst → MAY PROCEED. Icon-image
+  render deferred (icon style → labeled pill). Simplifier: no churn. Build clean. Next: 5a.4 hot-reload.
 - 2026-07-04 — Stage 5a.2 done: Launcher::Execute — detached MTA worker (pump-less fire-and-forget;
   STA would need a pump) → ShellExecuteW (url/shortcut) / CreateProcessW (command, handles closed);
   CoUninitialize only on SUCCEEDED(CoInitializeEx). #ifdef _DEBUG WM_MBUTTONUP cycles buttons as the

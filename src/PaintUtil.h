@@ -10,7 +10,9 @@ namespace Paint
     constexpr COLORREF kTextPrimary  = RGB(220, 220, 220);
     constexpr COLORREF kTextActive   = RGB(38,  20,  16);  // dark warm — legible on coral active chip
     constexpr COLORREF kTextSecond   = RGB(170, 170, 176);
-    constexpr COLORREF kTextOnBg     = RGB(20,  24,  32);  // dark — legible on kBgColor blue
+    constexpr COLORREF kTextOnBg     = RGB(20,  24,  32);   // dark — legible on kBgColor blue
+    constexpr COLORREF kButtonBg     = RGB(228, 231, 238);  // light pill — pops over dark cards + blue
+    constexpr COLORREF kButtonBorder = RGB(120, 124, 132);
 
     // Vertical window stack: one legible band per minimized window; the dock's
     // reserved height grows with the window count up to kMaxBands (extras beyond

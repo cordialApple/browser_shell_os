@@ -40,14 +40,24 @@ adjudicator MAY PROCEED.
 **Checkpoint:** each action type works from the debug middle-click trigger.
 (Runtime check pending on Windows.)
 
-### Step 5a.3 — Button strip rendering + clicks
-**Build:** `Renderer` draws pill/icon buttons at the dock's right end;
-hit-testing routes clicks to `Launcher::Execute`. Icons via
-`LoadImageW`/`SHGetFileInfoW` for shortcut targets; pills are rounded rects
-with label text.
+### Step 5a.3 — Button strip rendering + clicks ✅ (done 2026-07-04)
+**Built:** user chose **right-column overlay** (buttons pinned top-right, drawn
+over the cards). `Renderer::ButtonLayout` (single source for paint + hit-test,
+like `CardLayout`) right-anchors ScalePx(84) pills in the top strip, drops
+non-fitting silently. `DrawButton` = RoundRect (light `kButtonBg` fill +
+`kButtonBorder`, radius clamped to height/2) + centered ellipsized label
+(`kTextOnBg`). `Paint` draws buttons last (over cards + empty-state).
+`DockWindow::ButtonAt` hit-test; `WM_LBUTTONUP` routes button-first → card;
+`WM_MOUSEMOVE` suppresses the fan over a button. Removed the 5a.2 `_DEBUG`
+middle-click trigger (real left-clicks execute now). Icon-image rendering
+(`LoadImageW`/`SHGetFileInfoW`) deferred — icon style falls back to a labeled
+pill. Burst (DPI/visual/GDI+hit-test): fixed pill invisibility over dark cards
+(→ light `kButtonBg`), unscaled border pen, unclamped radius → re-burst → MAY
+PROCEED.
 
-**Checkpoint:** §12 row 5a: URL button opens the site in the default
-browser; shortcut button runs; buttons persist across restart.
+**Checkpoint:** §12 row 5a — URL button opens site in default browser; shortcut
+runs; buttons persist across restart. **Awaiting user visual acceptance** (pill
+look; empty-state text vs pills; light-pill legibility where blue shows).
 
 ### Step 5a.4 — Config hot-reload
 **Build:** watch the config directory (`ReadDirectoryChangesW` on a worker,

@@ -145,6 +145,16 @@ HWND DockWindow::CardAt(POINT ptClient) const
     return nullptr;
 }
 
+int DockWindow::ButtonAt(POINT ptClient) const
+{
+    RECT rc;
+    GetClientRect(m_hwnd, &rc);
+    for (const Renderer::ButtonHit& h :
+         Renderer::ButtonLayout(rc, GetDpiForWindow(m_hwnd), m_launcher.Buttons()))
+        if (PtInRect(&h.rect, ptClient)) return h.index;
+    return -1;
+}
+
 void DockWindow::ClearHover()
 {
     KillTimer(m_hwnd, kHoverTimer);
@@ -319,7 +329,7 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         HDC hdc = BeginPaint(hwnd, &ps);
         RECT rc;
         GetClientRect(hwnd, &rc);
-        Renderer::Paint(hdc, rc, GetDpiForWindow(hwnd), m_store);
+        Renderer::Paint(hdc, rc, GetDpiForWindow(hwnd), m_store, m_launcher.Buttons());
         EndPaint(hwnd, &ps);
         return 0;
     }
@@ -474,7 +484,9 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             m_mouseTracking = true;
         }
 
-        const HWND card = CardAt({ GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) });
+        const POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
+        // A button overlays the card's top-right; don't fan the card underneath it.
+        const HWND card = (ButtonAt(pt) >= 0) ? nullptr : CardAt(pt);
         if (card != m_hoverCard)
         {
             m_hoverCard = card;
@@ -497,7 +509,16 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
     case WM_LBUTTONUP:
     {
-        const HWND target = CardAt({ GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) });
+        const POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
+        // Buttons overlay the cards → hit-test them first.
+        const int btn = ButtonAt(pt);
+        if (btn >= 0)
+        {
+            ClearHover();
+            m_launcher.Execute(m_launcher.Buttons()[btn]);
+            return 0;
+        }
+        const HWND target = CardAt(pt);
         if (target)
         {
             ClearHover();
@@ -507,26 +528,6 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         }
         return 0;
     }
-
-#ifdef _DEBUG
-    case WM_MBUTTONUP:
-    {
-        // Debug trigger for 5a.2: each middle-click fires the next configured button
-        // so all action types can be exercised before the 5a.3 button strip exists.
-        const auto& btns = m_launcher.Buttons();
-        if (!btns.empty())
-        {
-            const Button& b = btns[m_debugExecIdx % btns.size()];
-            ++m_debugExecIdx;
-            wchar_t dbg[256];
-            _snwprintf_s(dbg, _countof(dbg), _TRUNCATE,
-                         L"[Launcher] exec %s -> %s\n", b.id.c_str(), b.target.c_str());
-            OutputDebugStringW(dbg);
-            m_launcher.Execute(b);
-        }
-        return 0;
-    }
-#endif
 
     case WM_RBUTTONUP:
         DestroyWindow(hwnd);
