@@ -4,32 +4,70 @@ Reference for `TaskbarOverlayWindow` (Stage 5b). ALL heuristics isolated to that
 one file (hard rule 6); this doc records *why* the code looks the way it does so
 a future Windows update that breaks it is a one-file + one-doc fix.
 
-## The headline: Win11 killed the per-button HWNDs
+## The headline: Win11 killed the per-button HWNDs — and the HWND stubs LIE
 
 Win11 (22H2/23H2/24H2, incl. build 26200) rebuilt the taskbar as XAML islands
 (`Windows.UI.Composition.DesktopWindowContentBridge` under `Shell_TrayWnd`). The
-Win10 per-button `MSTaskListWClass` is **absent** — `FindWindowEx(...,
-L"MSTaskListWClass", ...)` returns NULL on Win11.
+Win10 per-button `MSTaskListWClass` is **absent** on Win11.
 
-BUT the **container** `MSTaskSwWClass` still exists as a real HWND with a valid
-bounding rect on both Win10 and Win11. So a **pure HWND-rect** measurement works
-on both OSes — no UIA needed. (UIA path exists as a heavier fallback: `IUIAutomation`
-→ `ElementFromHandle(tray)` → find `Name="Running applications"` → `get_CurrentBoundingRectangle`.
-Not used in 5b.1.)
+The `MSTaskSwWClass` ("Running applications") container HWND still exists — **but
+its rect is a legacy stub that does NOT match the XAML layout.** Measured live on
+build 26200 @ 200%: `MSTaskSwWClass` = 45..577 (in the non-PMv2 probe's virtualized
+coords), while the actual app icons render out to ~1418. So a pure-HWND measurement
+lands badly wrong on Win11. **UIA is required** to read the real XAML element rects.
+(Confirmed the hard way: the first HWND-only 5b.1 outline spanned far too wide on
+both sides.)
 
-## Measurement (both OSes)
+## Win11 measurement — UIA (what 5b.1 actually does)
+
+`ElementFromHandle(Shell_TrayWnd)` → `FindFirst(Descendants, AutomationId="TaskbarFrame")`
+→ enumerate its children (`FindAll(Children, TrueCondition)`), reading each child's
+`get_CurrentBoundingRectangle` + `ClassName` + `AutomationId`:
+
+- **gap.left** = max `.right` over task buttons: `ClassName ==
+  "Taskbar.TaskListButtonAutomationPeer"` (the app buttons) plus the `StartButton`/
+  `SearchButton`/`TaskViewButton` toggle buttons.
+- **gap.right** = `TrayNotifyWnd` left edge (HWND rect), OVERRIDDEN by the
+  `WidgetsButton` (`AutomationId == "WidgetsButton"`) left edge **only when** it sits
+  in the gap (`widgetsLeft > gap.left && widgetsLeft < trayLeft`). Default Win11 puts
+  Widgets on the far left → then it's ignored and the tray bounds the gap.
+- **gap top/bottom** = `Shell_TrayWnd` rect (HWND).
+
+Live element rects on the user's taskbar (physical px in a PMv2 process): app
+buttons end at Postman `..1418`; `WidgetsButton` = `1948..2252`; tray starts 2276.
+→ gap = **[1418, 1948]**. In a PMv2 process, UIA `BoundingRectangle` and
+`GetWindowRect` share one physical-pixel space (no conversion). The 1440-vs-2880
+discrepancy seen in a raw PowerShell probe is only because that probe wasn't PMv2.
+
+Guards (each prevents a visibly-wrong outline): explorer.exe owner verify;
+`IsAutoHide` bail; null `TrayNotifyWnd` → invalid; `GetDpiForWindow(tray)==0` →
+invalid; no task-button matched (`gap.left == tray.left`) → invalid; min-gap
+threshold (scaled by the taskbar monitor's DPI).
+
+Debt: the overflow/"show more" chevron's class is unconfirmed — if the task list
+overflows it may not be counted as a task button and the outline could overlap it.
+Revisit with a live overflowed taskbar.
+
+## Win10 fallback (no TaskbarFrame element)
 
 ```
-tray   = FindWindowExW(NULL, prev, L"Shell_TrayWnd", NULL)  // loop; verify owner
-rebar  = FindWindowExW(tray, 0, L"ReBarWindow32", NULL)      // may be NULL on Win11
-taskSw = FindWindowExW(rebar?rebar:tray, 0, L"MSTaskSwWClass", NULL)  // task-list container
-trayNd = FindWindowExW(tray, 0, L"TrayNotifyWnd", NULL)      // system tray
-gap    = { taskSw.right, tray.top, trayNd.left, tray.bottom }  // physical px
+rebar  = FindWindowExW(tray, 0, L"ReBarWindow32", NULL)
+taskSw = FindWindowExW(rebar?rebar:tray, 0, L"MSTaskSwWClass", NULL)
+taskLs = FindWindowExW(taskSw, 0, L"MSTaskListWClass", NULL)   // exists on Win10
+gap.left = (taskLs?taskLs:taskSw).right   // with sleep-wake stale-rect sanity check
+gap.right = TrayNotifyWnd.left
 ```
 
-Win10 only: `MSTaskListWClass` under `MSTaskSwWClass` gives a tighter right edge,
-but the container's `.right` is close enough and works uniformly — we use the
-container on both.
+On Win10 the HWND rects DO match the layout, so no UIA is needed there. The UIA vs
+HWND fork is decided by whether the `TaskbarFrame` element is found.
+
+## Threading (rule 5)
+
+UIA is blocking cross-process work → it runs on a **worker thread** (mirrors
+`TabReader`): `CoInitializeEx(MULTITHREADED)` + `CLSID_CUIAutomation`, waits on a
+request flag, measures, `PostMessageW`s a heap `Gap*` back; the UI thread
+`SetWindowPos`es the outline. `automation.Reset()` before `CoUninitialize`;
+`CoUninitialize` only on `SUCCEEDED(CoInitializeEx)`.
 
 ## Mandatory guards (each maps to a real failure mode)
 

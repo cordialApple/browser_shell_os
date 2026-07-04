@@ -90,18 +90,22 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
-- 2026-07-04 — Phase 5b started; 5b.1 gap-measurement + debug outline code done. win32-scout mapped Win11
-  taskbar (per-button MSTaskListWClass gone → XAML; MSTaskSwWClass container rect survives → pure HWND-rect
-  path works Win10+Win11, no UIA, stays on UI thread) → saved `docs/research/win11-taskbar-geometry.md`.
-  New `TaskbarOverlayWindow.{h,cpp}`: FindTaskbar (Shell_TrayWnd + explorer.exe owner verify), MeasureGap
-  ([MSTaskSwWClass.right, TrayNotifyWnd.left]×tray height) with rebar-or-tray fallback, sleep-wake stale-
-  rect sanity check, ABM_GETSTATE auto-hide bail, min-gap scaled by taskbar-monitor DPI (GetDpiForWindow
-  (tray), cross-process); click-through layered outline (WS_EX_TRANSPARENT|LAYERED, LWA_COLORKEY, green
-  frame). DockWindow owns it: Update() on Create + 500ms kOverlayTimer + ABN_POSCHANGED/DISPLAYCHANGE/
-  DPICHANGED; WM_DESTROY reset + WM_ENDSESSION KillTimer. Never registers an AppBar → no ABM_REMOVE
-  obligation. Inspector burst (AppBar/threading/DPI/visual) → adjudicator MAY PROCEED; applied F-01
-  (taskbar-monitor DPI), F-03 (endsession KillTimer), F-05 (dead member); F-02/F-04 → 5b.3 debt.
-  Simplifier folded 6 bail-outs into one kInvalid sentinel. Build clean. Visual check pending on Windows.
+- 2026-07-04 — Phase 5b started; 5b.1 gap-measurement + debug outline code done, MAY PROCEED. First tried a
+  pure-HWND path but USER SCREENSHOT showed the outline far too wide. Live-probed the taskbar: on Win11 the
+  MSTaskSwWClass HWND rect is a legacy STUB (45..577) that doesn't match the XAML layout (app icons render
+  to ~1418). PIVOTED to UIA. `TaskbarOverlayWindow.{h,cpp}`: MeasureGap = ElementFromHandle(Shell_TrayWnd) →
+  find TaskbarFrame → walk children: gap.left = max right over task buttons (Taskbar.TaskListButtonAutomation
+  Peer + Start/Search/TaskView), gap.right = WidgetsButton left (when in-gap) else TrayNotifyWnd left. Win10
+  fallback = legacy MSTaskListWClass/TrayNotifyWnd HWND path. UIA is blocking → WORKER thread (mirrors
+  TabReader): CoInit MTA + CLSID_CUIAutomation, posts heap Gap* → UI thread SetWindowPos's a click-through
+  layered outline (WS_EX_TRANSPARENT|LAYERED, LWA_COLORKEY, green frame). FindTaskbar verifies explorer.exe
+  owner. Guards→kInvalid: auto-hide, null tray, GetDpiForWindow(tray)==0, no-task-button. DockWindow owns it;
+  RequestMeasure (signals worker) on Create + 500ms kOverlayTimer + ABN_POSCHANGED/DISPLAYCHANGE/DPICHANGED;
+  WM_DESTROY joins worker before AppBarRemove + WM_ENDSESSION KillTimer. No AppBar → no ABM_REMOVE. Two burst
+  rounds (AppBar/threading/DPI/visual): r1 fixed CoUninitialize-before-ComPtr-release (BLOCKING) + null-tray/
+  dpi-0/no-button guards + CoInit-HRESULT balance; r2 re-burst (threading+visual) clean, [1418,1948] traced.
+  Simplifier: no churn. Live UIA layout saved to research doc. Build clean. Visual check pending on Windows.
+  Debt→5b.3: overflow-chevron class (live), worker-join vs hung explorer at shutdown, one-Gap shutdown leak.
 - 2026-07-04 — Stage 5a.4 done + Phase 5a complete: config hot-reload. ConfigWatcher.{h,cpp} worker
   (overlapped ReadDirectoryChangesW + stop-event; pending-flag drain teardown so no break path deadlocks
   or leaks). DockWindow: kConfigChangedMsg → 300ms kConfigTimer debounce → Launcher.Load()+repaint;

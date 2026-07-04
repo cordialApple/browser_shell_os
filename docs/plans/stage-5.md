@@ -82,29 +82,35 @@ restart. (Runtime check pending on Windows.)
 
 ### Step 5b.1 — Gap measurement ✅ (code done 2026-07-04)
 **Built:** `src/TaskbarOverlayWindow.{h,cpp}` (ALL taskbar-geometry heuristics
-here — hard rule 6). Scout (`docs/research/win11-taskbar-geometry.md`) settled the
-approach: on Win11 the per-button `MSTaskListWClass` is gone (XAML islands), but
-the `MSTaskSwWClass` *container* rect still exists — so a **pure HWND-rect** path
-works on both Win10 and Win11, no UIA needed (keeps measurement on the UI thread,
-non-blocking). `FindTaskbar()` finds `Shell_TrayWnd` and verifies explorer.exe
-owner (class-name spoofing guard). `MeasureGap()` = `[MSTaskSwWClass.right,
-TrayNotifyWnd.left]` × full tray height, with: rebar-or-tray fallback for the task
-container, sleep-wake stale-rect sanity check (task rect must nest inside tray),
-`SHAppBarMessage(ABM_GETSTATE)` auto-hide bail, min-gap threshold scaled by the
-**taskbar monitor's** DPI (`GetDpiForWindow(tray)`, cross-process). Debug outline
-= click-through layered window (`WS_EX_TRANSPARENT|LAYERED`, `LWA_COLORKEY`) with
-a bright green frame. `DockWindow` owns it; `Update()` fires from `Create`, a
-500ms `kOverlayTimer` (5b.1 scaffold — 5b.3 swaps in the `LOCATIONCHANGE` hook),
+here, hard rule 6). Key discovery (via live probing, see
+`docs/research/win11-taskbar-geometry.md`): on Win11 the `MSTaskSwWClass` HWND rect
+is a legacy STUB that does not match the XAML layout (measured 45..577 while the app
+icons render to ~1418), so a pure-HWND path lands badly wrong. The first HWND-only
+attempt confirmed it (outline far too wide both sides). Pivoted to UIA: `MeasureGap`
+does `ElementFromHandle(Shell_TrayWnd)`, finds `TaskbarFrame`, walks its children:
+gap.left = max right over task buttons (`Taskbar.TaskListButtonAutomationPeer` plus
+Start/Search/TaskView); gap.right = `WidgetsButton` left when it sits in the gap else
+`TrayNotifyWnd` left. Win10 keeps the legacy `MSTaskListWClass`/`TrayNotifyWnd` HWND
+path (chosen when no TaskbarFrame element). UIA is blocking, so it runs on a WORKER
+thread (rule 5, mirrors TabReader): CoInit MTA + `CLSID_CUIAutomation`, posts a heap
+`Gap*` back; UI thread SetWindowPos's the outline. `FindTaskbar` verifies explorer.exe
+owner. Guards (each returns invalid): auto-hide, null tray, `GetDpiForWindow(tray)==0`,
+no-task-button-matched. Debug outline = click-through layered window
+(`WS_EX_TRANSPARENT|LAYERED`, `LWA_COLORKEY`, green frame). `DockWindow` owns it;
+`RequestMeasure` (non-blocking, signals worker) fires from `Create`, a 500ms
+`kOverlayTimer` (5b.1 scaffold; 5b.3 swaps in the `LOCATIONCHANGE` hook),
 `ABN_POSCHANGED`, `WM_DISPLAYCHANGE`, `WM_DPICHANGED`; torn down in `WM_DESTROY`
-(+ `KillTimer` in `WM_ENDSESSION`). Overlay never registers an AppBar → no
-ABM_REMOVE obligation. Burst (AppBar/threading/DPI/visual) → adjudicator
-MAY PROCEED; applied F-01 (taskbar-monitor DPI), F-03 (endsession KillTimer),
-F-05 (dead member). Debt for 5b.3: fence the `ABM_GETSTATE` explorer round-trip
-(F-02), cache explorer-owner check (F-04).
+(worker joined before AppBarRemove) plus `KillTimer` in `WM_ENDSESSION`. No AppBar
+registered, so no ABM_REMOVE obligation. Two burst rounds to MAY PROCEED: round 1
+fixed CoUninitialize-before-ComPtr (BLOCKING) plus null-tray / dpi-0 / no-button
+guards plus CoInit-HRESULT balance; round 2 (threading+visual re-burst) clean, target
+[1418,1948] traced correct. Simplifier: no churn. Debt for 5b.3: confirm the
+overflow-chevron class on a live overflowed taskbar; fence `ABM_GETSTATE` / the
+worker-join vs a hung explorer at shutdown; bounded one-`Gap` shutdown leak.
 
-**Checkpoint:** outline hugs the empty region on Win10 and Win11, centered and
-left-aligned layouts; opening/closing apps moves it. **Awaiting user visual/
-runtime check on Windows** (build clean; can't verify placement off-Windows).
+**Checkpoint:** outline hugs the empty strip between the last task button and the
+Widgets/tray on Win10 and Win11, centered + left layouts; opening/closing apps moves
+it. **Awaiting user visual/runtime check on Windows** (build clean).
 
 ### Step 5b.2 — Overlay window + click-through
 **Build:** borderless topmost tool window positioned in the measured gap;

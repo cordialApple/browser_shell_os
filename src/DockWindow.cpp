@@ -145,7 +145,7 @@ bool DockWindow::Create(HINSTANCE instance)
     m_taskbarOverlay = std::make_unique<TaskbarOverlayWindow>();
     if (m_taskbarOverlay->Create(instance))
     {
-        m_taskbarOverlay->Update();
+        m_taskbarOverlay->RequestMeasure();
         SetTimer(hwnd, kOverlayTimer, kOverlayMs, nullptr);
     }
 
@@ -364,7 +364,7 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         if (wparam == ABN_POSCHANGED || wparam == ABN_STATECHANGE)
         {
             AppBarSetPos(hwnd);
-            if (m_taskbarOverlay) m_taskbarOverlay->Update();  // taskbar moved/auto-hide toggled
+            if (m_taskbarOverlay) m_taskbarOverlay->RequestMeasure();  // taskbar moved/auto-hide toggled
         }
         else if (wparam == ABN_FULLSCREENAPP)
         {
@@ -376,13 +376,13 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
     case WM_DISPLAYCHANGE:
         AppBarSetPos(hwnd);
-        if (m_taskbarOverlay) m_taskbarOverlay->Update();
+        if (m_taskbarOverlay) m_taskbarOverlay->RequestMeasure();
         InvalidateRect(hwnd, nullptr, TRUE);  // width may change → repaint whole client
         return 0;
 
     case WM_DPICHANGED:
         AppBarSetPos(hwnd);
-        if (m_taskbarOverlay) m_taskbarOverlay->Update();
+        if (m_taskbarOverlay) m_taskbarOverlay->RequestMeasure();
         InvalidateRect(hwnd, nullptr, TRUE);  // repaint all at new DPI, not just exposed strip
         return 0;
 
@@ -483,7 +483,7 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         }
         else if (wparam == kOverlayTimer)
         {
-            if (m_taskbarOverlay) m_taskbarOverlay->Update();
+            if (m_taskbarOverlay) m_taskbarOverlay->RequestMeasure();
         }
         return 0;
 
