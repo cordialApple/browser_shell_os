@@ -109,18 +109,18 @@ namespace
         HPEN   pen = CreatePen(PS_SOLID, (std::max)(1, ScalePx(1, dpiI)), kButtonBorder);
         HGDIOBJ ob = SelectObject(hdc, br);
         HGDIOBJ op = SelectObject(hdc, pen);
-        const int r = (std::min)(ScalePx(6, dpiI), static_cast<int>(rc.bottom - rc.top) / 2);
+        const int r = (std::min)(ScalePx(3, dpiI), static_cast<int>(rc.bottom - rc.top) / 2);
         RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, r, r);
         SelectObject(hdc, op);
         SelectObject(hdc, ob);
         DeleteObject(pen);
         DeleteObject(br);
 
-        HFONT font = MakeFont(9, FW_MEDIUM, dpiI);
+        HFONT font = MakeFont(8, FW_MEDIUM, dpiI);
         HGDIOBJ of = SelectObject(hdc, font);
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, kTextOnBg);
-        const int tp = ScalePx(6, dpiI);
+        const int tp = ScalePx(3, dpiI);
         RECT txt = { rc.left + tp, rc.top, rc.right - tp, rc.bottom };
         if (txt.right > txt.left)
             DrawTextW(hdc, b.label.c_str(), -1, &txt,
@@ -173,9 +173,9 @@ namespace Renderer
 
         const int dpiI  = dpi ? static_cast<int>(dpi) : 96;
         const int pad   = ScalePx(4, dpiI);
-        const int gap   = ScalePx(4, dpiI);
-        const int pillW = ScalePx(84, dpiI);
-        const int pillH = (std::min)(ScalePx(22, dpiI), static_cast<int>(rc.bottom - rc.top) - 2 * pad);
+        const int gap   = ScalePx(3, dpiI);
+        const int pillW = ScalePx(48, dpiI);
+        const int pillH = (std::min)(ScalePx(16, dpiI), static_cast<int>(rc.bottom - rc.top) - 2 * pad);
         if (pillH < 1) return hits;
 
         // As many as fit in the strip width; right-anchored group in the top corner.
