@@ -54,4 +54,5 @@ private:
     Launcher                   m_launcher;
     HWND                       m_hoverCard    = nullptr;
     bool                       m_mouseTracking = false;
+    size_t                     m_debugExecIdx = 0;
 };

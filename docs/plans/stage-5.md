@@ -26,12 +26,19 @@ written to the config path for the runtime check.
 starts, buttons skipped, `OutputDebugStringW` notes why. (Runtime check pending
 on Windows via debugger; render/execute land in 5a.2–5a.3.)
 
-### Step 5a.2 — Actions
-**Build:** `Launcher::Execute(button)`: `url` → `ShellExecuteW(open, target)`
-(default browser); `shortcut` → `ShellExecuteW` on the `.lnk`; `command` →
-`CreateProcessW`. Fire-and-forget, never block the UI thread.
+### Step 5a.2 — Actions ✅ (done 2026-07-04)
+**Built:** `Launcher::Execute(const Button&)` — copies action+target into a
+detached **MTA** worker (pump-less fire-and-forget; STA would need a pump and
+could hang a DDE handler) → `url`/`shortcut`: `ShellExecuteW(open, target)`;
+`command`: `CreateProcessW` (both handles closed). `CoUninitialize` only on
+`SUCCEEDED(CoInitializeEx)`. Never blocks the UI thread (spawn+detach returns
+immediately). Debug trigger: `#ifdef _DEBUG` `WM_MBUTTONUP` cycles configured
+buttons. Two bursts (threading + resource): fixed unconditional-CoUninitialize,
+STA→MTA, ConfigPath free-of-garbage guard, MBTWC guard → re-burst clean →
+adjudicator MAY PROCEED.
 
-**Checkpoint:** each action type works from a debug key binding.
+**Checkpoint:** each action type works from the debug middle-click trigger.
+(Runtime check pending on Windows.)
 
 ### Step 5a.3 — Button strip rendering + clicks
 **Build:** `Renderer` draws pill/icon buttons at the dock's right end;

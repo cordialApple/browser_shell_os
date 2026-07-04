@@ -33,17 +33,17 @@ performance over ETW.
 | Stage 2 — browser detection | ✅ Complete — all 4 steps + §12 row 2 accepted on Win11 |
 | Stage 3 — single-window tabs | ✅ Complete — tabs render per-window on minimize, accepted on Win11 |
 | Stage 4 — multi-window stacks | 🟡 code complete (4.1–4.5 + 4.5a) — §12 row 4 acceptance pending on Windows |
-| Stage 5 — taskbar buttons | 🟡 in progress — 5a.1 (config load) done; next 5a.2 actions |
+| Stage 5 — taskbar buttons | 🟡 in progress — 5a.1 config + 5a.2 actions done; next 5a.3 button strip (VISUAL — gate) |
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 5a.2 — Launcher actions** (non-visual: url/shortcut→ShellExecuteW,
-command→CreateProcessW, fire-and-forget). See `docs/plans/stage-5.md`. 5a.3 (button strip render +
-clicks) IS visual → gate for user acceptance. User rule: only gate Stage-5 changes that need a visual
-look; proceed autonomously otherwise.
-Done this session: Stage 4 complete incl. 4.5b vertical-stack (dynamic dock height, bands grow/shrink
-with count, cap 4) + recolor (bg #00A2ED, active #f87e73); Stage 5a.1 config load (line-based
-config.txt). Pending user runtime/visual check: dock grows as windows minimize, colors render.
+**Next action: Stage 5a.3 — button strip rendering + clicks (VISUAL → gate for user acceptance).**
+Renderer draws pill/icon buttons at dock's right end; hit-test routes clicks to Launcher::Execute.
+See `docs/plans/stage-5.md`. User rule: only gate Stage-5 changes needing a visual look; 5a.3 qualifies.
+Done this session: Stage 4 complete incl. 4.5b vertical-stack (dynamic dock height, cap 4) + recolor
+(bg #00A2ED, active #f87e73); Stage 5a.1 config load + 5a.2 actions (Launcher::Execute, detached MTA
+worker). Pending user runtime/visual check: dock grows as windows minimize, colors render; middle-click
+(debug) fires configured buttons.
 
 Deferred debt:
 - [renderer-tiny-card] Very narrow cards (rowW < ~48px, i.e. many minimized windows) drop the
@@ -87,6 +87,12 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-04 — Stage 5a.2 done: Launcher::Execute — detached MTA worker (pump-less fire-and-forget;
+  STA would need a pump) → ShellExecuteW (url/shortcut) / CreateProcessW (command, handles closed);
+  CoUninitialize only on SUCCEEDED(CoInitializeEx). #ifdef _DEBUG WM_MBUTTONUP cycles buttons as the
+  trigger. Two bursts (threading + resource): fixed unconditional-CoUninitialize (BLOCKING), STA→MTA,
+  ConfigPath free-of-garbage guard, MBTWC guard → re-burst clean → MAY PROCEED. Simplifier: no churn.
+  Build clean (had to nuke a VS2019-reverted CMake cache + regen VS2022 mid-step). Next: 5a.3 (visual).
 - 2026-07-04 — Stage 5a.1 done: Launcher.{h,cpp} line-based config load (config.txt,
   style|label|action|target|iconPath, BOM/UTF-8 decode, malformed→skip+debug, missing→zero). Chose
   line-based over JSON per hard rule 2. Loaded in DockWindow::Create. Two bursts (parsing + resource

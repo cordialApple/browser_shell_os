@@ -508,6 +508,26 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         return 0;
     }
 
+#ifdef _DEBUG
+    case WM_MBUTTONUP:
+    {
+        // Debug trigger for 5a.2: each middle-click fires the next configured button
+        // so all action types can be exercised before the 5a.3 button strip exists.
+        const auto& btns = m_launcher.Buttons();
+        if (!btns.empty())
+        {
+            const Button& b = btns[m_debugExecIdx % btns.size()];
+            ++m_debugExecIdx;
+            wchar_t dbg[256];
+            _snwprintf_s(dbg, _countof(dbg), _TRUNCATE,
+                         L"[Launcher] exec %s -> %s\n", b.id.c_str(), b.target.c_str());
+            OutputDebugStringW(dbg);
+            m_launcher.Execute(b);
+        }
+        return 0;
+    }
+#endif
+
     case WM_RBUTTONUP:
         DestroyWindow(hwnd);
         return 0;

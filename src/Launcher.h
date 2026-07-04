@@ -26,6 +26,10 @@ public:
     void Load();
     const std::vector<Button>& Buttons() const { return m_buttons; }
 
+    // Fire-and-forget: launches on a detached MTA worker so a slow shell handler
+    // never blocks the dock's UI pump (CLAUDE.md rule 5).
+    void Execute(const Button& b) const;
+
     static std::wstring ConfigPath();
 
 private:

@@ -4,6 +4,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
+#include <thread>
 
 namespace
 {
@@ -55,7 +56,11 @@ namespace
         const int wlen = MultiByteToWideChar(CP_UTF8, 0, bytes.data() + off, len, nullptr, 0);
         if (wlen <= 0) { out.clear(); return false; }
         out.assign(wlen, L'\0');
-        MultiByteToWideChar(CP_UTF8, 0, bytes.data() + off, len, out.data(), wlen);
+        if (MultiByteToWideChar(CP_UTF8, 0, bytes.data() + off, len, out.data(), wlen) == 0)
+        {
+            out.clear();
+            return false;
+        }
         return true;
     }
 
@@ -78,13 +83,11 @@ namespace
 std::wstring Launcher::ConfigPath()
 {
     PWSTR local = nullptr;
-    if (FAILED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local)) || !local)
-    {
-        if (local) CoTaskMemFree(local);
-        return L"";
-    }
-    std::wstring path = local;
-    CoTaskMemFree(local);
+    const HRESULT hr = SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local);
+    std::wstring path;
+    if (SUCCEEDED(hr) && local) path = local;
+    CoTaskMemFree(local);  // no-op on null; safe on every path
+    if (path.empty()) return L"";
     path += L"\\browser_shell_os\\config.txt";
     return path;
 }
@@ -138,4 +141,36 @@ void Launcher::Load()
     }
 
     DebugPrintf(L"[Launcher] loaded %zu button(s) from %s\n", m_buttons.size(), path.c_str());
+}
+
+void Launcher::Execute(const Button& b) const
+{
+    const ButtonAction action = b.action;
+    std::wstring target = b.target;
+    std::thread([action, target = std::move(target)]() mutable {
+        // MTA, not STA: this worker runs no message pump, so an STA (which requires
+        // one) could hang a DDE-style shell handler. Balance CoUninitialize only on
+        // a successful init (RPC_E_CHANGED_MODE must not be uninitialized).
+        const HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        switch (action)
+        {
+        case ButtonAction::Url:
+        case ButtonAction::Shortcut:
+            ShellExecuteW(nullptr, L"open", target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            break;
+        case ButtonAction::Command:
+        {
+            STARTUPINFOW si = { sizeof(si) };
+            PROCESS_INFORMATION pi = {};
+            if (CreateProcessW(nullptr, target.data(), nullptr, nullptr, FALSE,
+                               0, nullptr, nullptr, &si, &pi))
+            {
+                CloseHandle(pi.hThread);
+                CloseHandle(pi.hProcess);
+            }
+            break;
+        }
+        }
+        if (SUCCEEDED(hr)) CoUninitialize();
+    }).detach();
 }
