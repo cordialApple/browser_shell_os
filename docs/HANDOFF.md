@@ -37,9 +37,10 @@ performance over ETW.
 | Profiler (parallel workstream) | ⬜ unlocked — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: Stage 4 step 4.3 — per-window hover-fan popup.** See `docs/plans/stage-4.md` (variant D).
-4.2a done (active-tab flag + highlight); awaiting user dock-appearance check on the active-chip
-highlight (contrast tweak F-03 pending user call).
+**Next action: Stage 4 step 4.4 — click-to-restore + hit testing.** See `docs/plans/stage-4.md` (variant D).
+4.3 hover-fan built + MAY PROCEED; awaiting user dock-appearance check (hover a card → fan opens
+upward, lists tabs, no focus steal, closes on leave; strip height constant). Also still pending:
+4.2a active-chip highlight contrast (F-03 user call).
 
 Deferred debt:
 - [renderer-tiny-card] Very narrow cards (rowW < ~48px, i.e. many minimized windows) drop the
@@ -83,6 +84,14 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-03 — Step 4.3 done: per-window hover-fan. FanPopup.{h,cpp} (transient WS_POPUP, NOACTIVATE,
+  grows upward from strip top, monitor-clamped, DPI-scaled rows + "+N more" overflow). PaintUtil.h
+  extracts shared palette/ScalePx/MakeFont. Renderer exposes CardLayout (single source of card rects,
+  shared with hit-test). DockWindow owns FanPopup: TrackMouseEvent(TME_LEAVE) + 250ms kHoverTimer
+  hover-intent, ShowFanFor maps card→screen anchor, WM_MOUSELEAVE/WM_DESTROY tear down. Inspector burst
+  (AppBar clean, threading clean, DPI 2 deferred, visual/layout V1/V2/V3) → adjudicator → MAY PROCEED.
+  Applied F-01 top-clamp (height≤avail), F-02 empty-tabs guard (Show→Hide), F-03 +N padding align.
+  Simplifier: no churn. Build clean. Runtime/visual check pending with user. Next: 4.4 click-restore.
 - 2026-07-03 — Step 4.2a done: TabReader caches UIA_SelectionItemIsSelectedPropertyId → Tab.active
   (clamped to one active tab max at source); Renderer promotes active chip to front + highlights it
   (kChipActiveBg/kTextActive). Inspector burst (visual/layout, DPI, threading) → adjudicator →

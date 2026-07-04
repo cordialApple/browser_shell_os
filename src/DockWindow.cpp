@@ -1,6 +1,7 @@
 #include "DockWindow.h"
 #include "Renderer.h"
 #include "WindowMonitor.h"
+#include <windowsx.h>
 #include <algorithm>
 
 #pragma comment(lib, "shell32.lib")
@@ -14,6 +15,8 @@ namespace
     constexpr int     kDockHeightDip    = 64;
     constexpr UINT_PTR kDebounceTimer   = 1;
     constexpr UINT    kDebounceMs       = 200;
+    constexpr UINT_PTR kHoverTimer      = 2;
+    constexpr UINT    kHoverMs          = 250;
 
     // Single-instance: safe to keep a plain HWND here for the WinEventProc callback.
     // Written on the UI thread in Create/WM_DESTROY; read on the same thread in WinEventProc
@@ -123,7 +126,36 @@ bool DockWindow::Create(HINSTANCE instance)
 
     m_tabReader = std::make_unique<TabReader>(hwnd, kTabSnapshotMsg);
 
+    m_fanPopup = std::make_unique<FanPopup>();
+    m_fanPopup->Create(instance);
+
     return true;
+}
+
+// Map a hovered card (client coords) to screen anchor and open the fan above it.
+void DockWindow::ShowFanFor(HWND card)
+{
+    if (!card || !m_fanPopup) return;
+
+    const auto& all = m_store.All();
+    auto it = all.find(card);
+    if (it == all.end()) return;
+
+    RECT rc;
+    GetClientRect(m_hwnd, &rc);
+    const UINT dpi = GetDpiForWindow(m_hwnd);
+
+    for (const Renderer::CardHit& c : Renderer::CardLayout(rc, dpi, m_store))
+    {
+        if (c.hwnd != card) continue;
+        // Anchor to the dock's top edge (client y=0), not the padded card top.
+        POINT pl = { c.rect.left,  0 };
+        POINT pr = { c.rect.right, 0 };
+        ClientToScreen(m_hwnd, &pl);
+        ClientToScreen(m_hwnd, &pr);
+        m_fanPopup->Show(it->second.title, it->second.tabs, pl.x, pr.x, pl.y, dpi);
+        return;
+    }
 }
 
 void DockWindow::AppBarSetPos(HWND hwnd)
@@ -304,7 +336,12 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
     }
 
     case WM_TIMER:
-        if (wparam == kDebounceTimer)
+        if (wparam == kHoverTimer)
+        {
+            KillTimer(hwnd, kHoverTimer);
+            ShowFanFor(m_hoverCard);
+        }
+        else if (wparam == kDebounceTimer)
         {
             KillTimer(hwnd, kDebounceTimer);
             for (HWND target : m_pendingValidation)
@@ -351,13 +388,54 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         return 0;
     }
 
+    case WM_MOUSEMOVE:
+    {
+        if (!m_mouseTracking)
+        {
+            TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
+            TrackMouseEvent(&tme);
+            m_mouseTracking = true;
+        }
+
+        const POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
+        RECT rc;
+        GetClientRect(hwnd, &rc);
+        HWND card = nullptr;
+        for (const Renderer::CardHit& c : Renderer::CardLayout(rc, GetDpiForWindow(hwnd), m_store))
+            if (PtInRect(&c.rect, pt)) { card = c.hwnd; break; }
+
+        if (card != m_hoverCard)
+        {
+            m_hoverCard = card;
+            if (card)
+            {
+                SetTimer(hwnd, kHoverTimer, kHoverMs, nullptr);
+            }
+            else
+            {
+                KillTimer(hwnd, kHoverTimer);
+                if (m_fanPopup) m_fanPopup->Hide();
+            }
+        }
+        return 0;
+    }
+
+    case WM_MOUSELEAVE:
+        m_mouseTracking = false;
+        m_hoverCard = nullptr;
+        KillTimer(hwnd, kHoverTimer);
+        if (m_fanPopup) m_fanPopup->Hide();
+        return 0;
+
     case WM_RBUTTONUP:
         DestroyWindow(hwnd);
         return 0;
 
     case WM_DESTROY:
         m_tabReader.reset();  // join worker before unhooking and removing appbar
+        m_fanPopup.reset();
         KillTimer(hwnd, kDebounceTimer);
+        KillTimer(hwnd, kHoverTimer);
         if (m_winEventHookForeground) { UnhookWinEvent(m_winEventHookForeground); m_winEventHookForeground = nullptr; }
         if (m_winEventHookNameChange) { UnhookWinEvent(m_winEventHookNameChange); m_winEventHookNameChange = nullptr; }
         if (m_winEventHookMinimize)   { UnhookWinEvent(m_winEventHookMinimize);   m_winEventHookMinimize   = nullptr; }

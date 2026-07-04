@@ -1,1 +1,9 @@
 build/
+
+# Stray in-source CMake generation (canonical build is build/)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.vcxproj
+*.vcxproj.filters
+*.sln

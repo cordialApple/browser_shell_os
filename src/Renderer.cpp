@@ -1,30 +1,12 @@
 ﻿#include "Renderer.h"
+#include "PaintUtil.h"
 #include <string>
 #include <vector>
 
+using namespace Paint;
+
 namespace
 {
-    constexpr COLORREF kBgColor      = RGB(28,  28,  30);
-    constexpr COLORREF kCardBg       = RGB(44,  44,  48);
-    constexpr COLORREF kChipBg       = RGB(60,  60,  66);
-    constexpr COLORREF kChipActiveBg = RGB(38,  79,  120);
-    constexpr COLORREF kTextPrimary  = RGB(220, 220, 220);
-    constexpr COLORREF kTextActive   = RGB(240, 244, 250);
-    constexpr COLORREF kTextSecond   = RGB(170, 170, 176);
-
-    int ScalePx(int px, int dpiI) { return MulDiv(px, dpiI, 96); }
-
-    HFONT MakeFont(int ptSize, int weight, int dpiI)
-    {
-        LOGFONTW lf      = {};
-        lf.lfHeight      = -MulDiv(ptSize, dpiI, 72);
-        lf.lfWeight      = weight;
-        lf.lfCharSet     = DEFAULT_CHARSET;
-        lf.lfQuality     = CLEARTYPE_QUALITY;
-        wcscpy_s(lf.lfFaceName, L"Segoe UI");
-        return CreateFontIndirectW(&lf);
-    }
-
     void DrawCard(HDC hdc, const RECT& cardRc, const TrackedWindow& win, int dpiI)
     {
         HBRUSH cardBrush = CreateSolidBrush(kCardBg);
@@ -157,6 +139,33 @@ namespace
 
 namespace Renderer
 {
+    std::vector<CardHit> CardLayout(const RECT& rc, UINT dpi, const Store& store)
+    {
+        const int dpiI = dpi ? static_cast<int>(dpi) : 96;
+
+        // The dock surfaces what you can't already see: only minimized windows.
+        std::vector<HWND> mins;
+        for (const auto& [hwnd, w] : store.All())
+            if (w.minimized) mins.push_back(hwnd);
+
+        std::vector<CardHit> cards;
+        const int n = static_cast<int>(mins.size());
+        if (n == 0) return cards;
+
+        const int pad   = ScalePx(4, dpiI);
+        const int rcW   = rc.right - rc.left;
+        const int cardW = (rcW - pad * (n + 1)) / n;
+        int x           = rc.left + pad;
+
+        cards.reserve(n);
+        for (HWND h : mins)
+        {
+            cards.push_back({ { x, rc.top + pad, x + cardW, rc.bottom - pad }, h });
+            x += cardW + pad;
+        }
+        return cards;
+    }
+
     void Paint(HDC hdc, const RECT& rc, UINT dpi, const Store& store)
     {
         HBRUSH bg = CreateSolidBrush(kBgColor);
@@ -165,12 +174,8 @@ namespace Renderer
 
         const int dpiI = dpi ? static_cast<int>(dpi) : 96;
 
-        // The dock surfaces what you can't already see: only minimized windows.
-        std::vector<const TrackedWindow*> mins;
-        for (const auto& [hwnd, w] : store.All())
-            if (w.minimized) mins.push_back(&w);
-
-        if (mins.empty())
+        const auto cards = CardLayout(rc, dpi, store);
+        if (cards.empty())
         {
             HFONT font    = MakeFont(12, FW_NORMAL, dpiI);
             HFONT oldFont = static_cast<HFONT>(SelectObject(hdc, font));
@@ -184,17 +189,12 @@ namespace Renderer
             return;
         }
 
-        const int pad   = ScalePx(4, dpiI);
-        const int rcW   = rc.right - rc.left;
-        const int n     = static_cast<int>(mins.size());
-        const int cardW = (rcW - pad * (n + 1)) / n;
-        int x           = rc.left + pad;
-
-        for (const TrackedWindow* w : mins)
+        const auto& all = store.All();
+        for (const CardHit& c : cards)
         {
-            RECT cardRc = { x, rc.top + pad, x + cardW, rc.bottom - pad };
-            DrawCard(hdc, cardRc, *w, dpiI);
-            x += cardW + pad;
+            auto it = all.find(c.hwnd);
+            if (it != all.end())
+                DrawCard(hdc, c.rect, it->second, dpiI);
         }
     }
 }
