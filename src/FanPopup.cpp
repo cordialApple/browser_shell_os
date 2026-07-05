@@ -8,7 +8,9 @@ namespace
 {
     constexpr wchar_t  kClassName[] = L"BrowserShellOsFanPopup";
     constexpr UINT_PTR kGraceTimer  = 1;
-    constexpr UINT     kGraceMs     = 200;
+    // Chips are edge-adjacent to their fan (fan bottom == chip top), so the only seam is
+    // the discrete-message hole on a fast upward flick — shorter than the old dock's gap.
+    constexpr UINT     kGraceMs     = 150;
 }
 
 FanPopup::~FanPopup()
@@ -55,7 +57,7 @@ void FanPopup::Destroy()
 }
 
 void FanPopup::Show(HWND targetHwnd, const std::vector<Tab>& tabs,
-                    int cardLeftScreen, int cardRightScreen, int stripTopScreen, UINT dpi)
+                    int anchorLeftScreen, int anchorRightScreen, int anchorTopScreen, UINT dpi)
 {
     if (!m_hwnd) return;
     if (tabs.empty()) { Hide(); return; }
@@ -67,24 +69,24 @@ void FanPopup::Show(HWND targetHwnd, const std::vector<Tab>& tabs,
     const int pad     = ScalePx(6, dpiI);
     const int rowH    = ScalePx(24, dpiI);
 
-    // Width tracks the hovered card but stays legible; clamp to the card's monitor.
-    int width = cardRightScreen - cardLeftScreen;
+    // Width tracks the hovered anchor (card or chip) but stays legible; clamp to monitor.
+    int width = anchorRightScreen - anchorLeftScreen;
     const int minW = ScalePx(240, dpiI);
     const int maxW = ScalePx(420, dpiI);
     if (width < minW) width = minW;
     if (width > maxW) width = maxW;
 
-    POINT anchor = { cardLeftScreen, stripTopScreen - 1 };
+    POINT anchor = { anchorLeftScreen, anchorTopScreen - 1 };
     HMONITOR hmon = MonitorFromPoint(anchor, MONITOR_DEFAULTTONEAREST);
     MONITORINFO mi = { sizeof(mi) };
     GetMonitorInfoW(hmon, &mi);
 
-    int left = cardLeftScreen;
+    int left = anchorLeftScreen;
     if (left + width > mi.rcMonitor.right)  left = mi.rcMonitor.right - width;
     if (left < mi.rcMonitor.left)           left = mi.rcMonitor.left;
 
-    // Grow upward from the strip; cap rows to what fits above the strip.
-    const int avail   = stripTopScreen - mi.rcMonitor.top;
+    // Grow upward from the anchor top; cap rows to what fits above it.
+    const int avail   = anchorTopScreen - mi.rcMonitor.top;
     int maxRows = (avail - pad * 2) / rowH;
     if (maxRows < 1) maxRows = 1;
 
@@ -103,7 +105,7 @@ void FanPopup::Show(HWND targetHwnd, const std::vector<Tab>& tabs,
     const int rows   = shown + (m_hiddenCount > 0 ? 1 : 0);
     int height = rows * rowH + pad * 2;
     if (height > avail) height = avail;   // never overflow above the monitor top
-    const int top = stripTopScreen - height;
+    const int top = anchorTopScreen - height;
 
     SetWindowPos(m_hwnd, HWND_TOPMOST, left, top, width, height,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
@@ -126,8 +128,20 @@ void FanPopup::Hide()
 
 void FanPopup::BeginGrace()
 {
-    if (m_hwnd && m_visible)
-        SetTimer(m_hwnd, kGraceTimer, kGraceMs, nullptr);
+    if (!m_hwnd || !m_visible) return;
+    // Don't arm if the cursor is already inside the fan. BeginGrace runs on the anchor's
+    // leave (dock WM_MOUSELEAVE / overlay kChipHoverMsg(0)), which can arrive AFTER the
+    // cursor has settled on the edge-adjacent fan; TrackMouseEvent synthesizes no arrival
+    // WM_MOUSEMOVE to CancelGrace it, so an unguarded timer would hide the fan mid-read.
+    if (CursorInFan()) return;
+    SetTimer(m_hwnd, kGraceTimer, kGraceMs, nullptr);
+}
+
+bool FanPopup::CursorInFan() const
+{
+    POINT pt;
+    RECT  rc;
+    return m_hwnd && GetCursorPos(&pt) && GetWindowRect(m_hwnd, &rc) && PtInRect(&rc, pt);
 }
 
 void FanPopup::CancelGrace()
@@ -184,6 +198,20 @@ LRESULT CALLBACK FanPopup::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPA
             if (wparam == kGraceTimer)
             {
                 KillTimer(hwnd, kGraceTimer);
+                // Re-check: if the cursor is on the fan (it returned without a move that
+                // would CancelGrace), keep it open — the fan's WM_MOUSELEAVE re-graces.
+                if (self->CursorInFan())
+                {
+                    // Cursor entered the fan without a WM_MOUSEMOVE (edge-seam teleport):
+                    // arm leave-tracking so a later exit still closes the fan.
+                    if (!self->m_fanTracking)
+                    {
+                        TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
+                        TrackMouseEvent(&tme);
+                        self->m_fanTracking = true;
+                    }
+                    return 0;
+                }
                 self->Hide();       // grace expired with cursor on neither window
                 return 0;
             }

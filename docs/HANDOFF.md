@@ -37,16 +37,22 @@ performance over ETW.
 | Profiler (parallel workstream) | 🟡 consumer P.2–P.4 code complete + builds green; P.1 shell emit not done — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: chip-rework Stage 2 (fan-from-chips). Stage 1 code-complete + checkpoint MAY PROCEED; Windows visual check pending (see below).**
+**Next action: chip-rework Stage 3 (kill the dock — AppBar removal). Stages 1+2 code-complete + MAY PROCEED; Windows visual check pending (see below).**
 Active workstream: **taskbar-chip rework** — kill the dock, put minimized-window chips in the taskbar gap
 (plan: `~/.claude/plans/dreamy-stirring-walrus.md`; feasibility: `docs/research/taskbar-chip-feasibility.md`).
 Stage 1 done: chips (minimized windows, title-only, insertion-ordered) render side-by-side in the gap
 overlay next to the automation pills (chips first, pills fill leftover + drop first, 4px edge dead-zone);
 `WM_NCHITTEST` covers chips+pills; clicking a chip restores its window (`kChipClickMsg`→`RestoreWindow`);
-`RefreshContent()` re-fits on chip-set change. Dock still up this stage (you'll see cards AND chips —
-transitional; the dock dies in Stage 3). **Windows visual check pending:** minimize 2-3 browser windows
-→ title chips appear in the gap; click a chip → that window restores; open many apps → gap shrinks, pills
-drop first then newest chips. Debt (F-01/F-02 fixed in-step; none carried from Stage 1).
+`RefreshContent()` re-fits on chip-set change.
+Stage 2 done: hover a chip → fan opens above it (`WM_NCHITTEST`-driven hover, live-cursor via GetCursorPos;
+overlay posts `kChipHoverMsg`→dock `ShowFanForChip`→`ChipRectScreen` anchor→`FanPopup::Show`); 150ms grace +
+`BeginGrace`/timer cursor-in-fan guard bridges the chip→fan seam; fan row click still uses the existing
+`kFanActivateMsg` tab-activate flow. Dock card-fan path still coexists (transitional; dock dies in Stage 3).
+**Windows visual check pending (Stages 1+2):** minimize 2-3 browsers → title chips in gap; hover a chip →
+fan opens above it, slide up into fan (must NOT vanish), click a row → window restores + that tab activates;
+move to another chip → fan repositions instantly (no dwell/hijack); click a chip → window restores.
+Debt: [S2-getcursorpos] NCHITTEST hover skips update if GetCursorPos fails (unreachable on live UI thread;
+WM_MOUSELEAVE recovers) — logged, not fixed.
 
 Prior (Stage 5) next action, now superseded by the rework: user visual check of Phase 5b + re-verify Stage 1–4 (§12).
 Phase 5b is CODE COMPLETE (5b.1 accepted; 5b.2 pills-in-gap; 5b.3 event-driven re-measure + single-host
@@ -109,6 +115,16 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-05 — Chip-rework Stage 2 done (fan from chips). Overlay: `WM_NCHITTEST`-driven hover (live cursor via
+  GetCursorPos so a spurious drag query can't drop hover), `UpdateHover`→`kChipHoverMsg`(HWND/0), `ChipRectScreen`.
+  Dock: `kChipHoverMsg`→`ShowFanForChip` (anchors fan above the chip, edge-adjacent) / `BeginGrace` on 0. FanPopup:
+  Show params renamed anchor*, grace 200→150ms, `CursorInFan()` guard in `BeginGrace` + WM_TIMER keep-open (arms
+  TME_LEAVE) — closes the seam race so the fan can't hide mid-read. Fan row click reuses `kFanActivateMsg` flow.
+  Burst (threading/DPI/teardown/hover-seam): threading+DPI+teardown CLEAN; hover-seam → adjudicator BLOCKED F-01
+  (seam race) → fixed (BeginGrace cursor guard) → re-burst found residual F-02 (drag NCHITTEST) + timer-arm gap →
+  fixed (live-cursor hover + TME_LEAVE in keep-open) → re-burst CLEAN → MAY PROCEED (F1 double-compute folded by
+  simplifier; F2 GetCursorPos-fail = debt, unreachable). Simplifier: `ChipHitOf`/`ButtonHitOf`/`CursorInFan` helpers.
+  Build green (both targets). Runtime/visual check pending on Windows. Next: Stage 3 kill the dock.
 - 2026-07-04 — Chip-rework STARTED (kill dock → taskbar chips). Design steered by Fable consult + win32-scout
   feasibility (both folded into `~/.claude/plans/dreamy-stirring-walrus.md` + `docs/research/taskbar-chip-
   feasibility.md`). Stage 1 done: Store insertion-order (`Ordered()`); Renderer `GapChipLayout` (chips-first,

@@ -5,8 +5,8 @@
 #include "Store.h"
 
 // Transient per-window tab list. A single reusable WS_POPUP window, repositioned
-// and repopulated per hovered card. Grows upward from the dock strip's top edge.
-// Never activates, never registers an AppBar. UI thread only.
+// and repopulated per hovered anchor (a dock card or a taskbar chip). Grows upward
+// from the anchor's top edge. Never activates, never registers an AppBar. UI thread only.
 class FanPopup
 {
 public:
@@ -20,10 +20,10 @@ public:
     void Destroy();
 
     // targetHwnd = the window whose tabs these are (echoed back on a row click).
-    // Anchor: bottom edge sits at stripTopScreen, left aligned to cardLeftScreen,
-    // clamped to the card's monitor. Grows upward.
+    // Anchor: bottom edge sits at anchorTopScreen, left aligned to anchorLeftScreen,
+    // clamped to the anchor's monitor. Grows upward.
     void Show(HWND targetHwnd, const std::vector<Tab>& tabs,
-              int cardLeftScreen, int cardRightScreen, int stripTopScreen, UINT dpi);
+              int anchorLeftScreen, int anchorRightScreen, int anchorTopScreen, UINT dpi);
     void Hide();
 
     // Hover-bridge: the fan is a separate window above the strip, so the cursor
@@ -44,6 +44,7 @@ private:
     // index into the ORIGINAL tab vector (== displayed row, tabs shown contiguously
     // from the front), or -1 for the "+N more" row / outside any clickable row.
     int  RowAt(POINT ptClient) const;
+    bool CursorInFan() const;
 
     HWND              m_hwnd        = nullptr;
     HWND              m_ownerHwnd   = nullptr;

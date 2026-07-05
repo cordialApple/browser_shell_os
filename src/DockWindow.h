@@ -35,6 +35,7 @@ private:
     void AppBarSetPos(HWND hwnd);
     int  DockHeightPx(UINT dpi) const;
     void ShowFanFor(HWND card);
+    void ShowFanForChip(HWND chip);
     HWND CardAt(POINT ptClient) const;
     int  ButtonAt(POINT ptClient) const;
     const std::vector<Button>& DockButtons() const;  // launcher buttons, or none while gap hosts them

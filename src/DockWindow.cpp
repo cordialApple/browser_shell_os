@@ -26,7 +26,7 @@ namespace
     constexpr UINT    kGapStateMsg      = WM_APP + 6;  // overlay → dock: gap host active?
     constexpr UINT    kFanActivateMsg   = WM_APP + 7;  // fan(UI) → dock: a tab row was clicked
     constexpr UINT    kTabActivateResultMsg = WM_APP + 8;  // TabReader worker → dock: activate outcome
-    // WM_APP + 9 reserved for kChipHoverMsg (Stage 2 fan-from-chips).
+    constexpr UINT    kChipHoverMsg     = WM_APP + 9;  // overlay → dock: hovered chip changed (HWND, or 0)
     constexpr UINT    kChipClickMsg     = WM_APP + 10; // overlay → dock: a chip was clicked (restore its window)
     // 5b.3: re-measure the gap on task-list EVENT_OBJECT_LOCATIONCHANGE, debounced
     // through this one-shot (RequestMeasure is already coalesced by the overlay worker).
@@ -172,7 +172,8 @@ bool DockWindow::Create(HINSTANCE instance)
     // Stage 5b: host the automation buttons in the taskbar's empty gap. Measure now,
     // then re-measure on a low-frequency timer + on geometry-change events.
     m_taskbarOverlay = std::make_unique<TaskbarOverlayWindow>();
-    if (m_taskbarOverlay->Create(instance, &m_launcher, &m_store, hwnd, kGapStateMsg, kChipClickMsg))
+    if (m_taskbarOverlay->Create(instance, &m_launcher, &m_store, hwnd, kGapStateMsg,
+                                 kChipClickMsg, kChipHoverMsg))
     {
         m_taskbarOverlay->RequestMeasure();
         SetTimer(hwnd, kOverlayTimer, kOverlayMs, nullptr);  // backstop: guarantees a 2nd verdict if the 1st post is lost
@@ -339,6 +340,23 @@ void DockWindow::ShowFanFor(HWND card)
         m_fanPopup->Show(card, it->second.tabs, pl.x, pr.x, pl.y, dpi);
         return;
     }
+}
+
+// Anchor the fan above a taskbar chip. The chip's screen rect comes from the overlay
+// (same UI thread — direct query, no cross-thread post); the fan grows upward from the
+// chip's top edge so chip and fan are edge-adjacent (minimal hover seam).
+void DockWindow::ShowFanForChip(HWND chip)
+{
+    if (!chip || !m_fanPopup || !m_taskbarOverlay) return;
+    const auto& all = m_store.All();
+    auto it = all.find(chip);
+    if (it == all.end()) return;
+
+    RECT r;
+    if (!m_taskbarOverlay->ChipRectScreen(chip, &r)) return;
+    m_fanPopup->CancelGrace();   // cursor is on a chip → keep the fan alive
+    m_fanPopup->Show(chip, it->second.tabs, r.left, r.right, r.top,
+                     GetDpiForWindow(m_taskbarOverlay->Hwnd()));
 }
 
 // Reserved height grows with the minimized-window count: one kBandHeightDip band
@@ -629,6 +647,18 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         m_gapResolved = true;
         InvalidateRect(hwnd, nullptr, FALSE);
         return 0;
+
+    case kChipHoverMsg:
+    {
+        // Hovered chip changed. A real HWND → open the fan above that chip; 0 (cursor left
+        // the overlay) → grace-close (the fan's own mouse-move cancels it if we cross in).
+        const HWND chip = reinterpret_cast<HWND>(wparam);
+        if (chip)
+            ShowFanForChip(chip);
+        else if (m_fanPopup)
+            m_fanPopup->BeginGrace();
+        return 0;
+    }
 
     case kChipClickMsg:
         // A taskbar chip was clicked → restore + foreground that window.

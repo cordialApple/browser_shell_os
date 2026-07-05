@@ -59,6 +59,20 @@ namespace
         if (SUCCEEDED(el->get_CurrentClassName(&b)) && b) { s = b; SysFreeString(b); }
         return s;
     }
+
+    HWND ChipHitOf(const Renderer::GapLayout& layout, POINT pt)
+    {
+        for (const Renderer::ChipHit& c : layout.chips)
+            if (PtInRect(&c.rect, pt)) return c.hwnd;
+        return nullptr;
+    }
+
+    int ButtonHitOf(const Renderer::GapLayout& layout, POINT pt)
+    {
+        for (const Renderer::ButtonHit& h : layout.buttons)
+            if (PtInRect(&h.rect, pt)) return h.index;
+        return -1;
+    }
 }
 
 TaskbarOverlayWindow::~TaskbarOverlayWindow()
@@ -68,13 +82,14 @@ TaskbarOverlayWindow::~TaskbarOverlayWindow()
 
 bool TaskbarOverlayWindow::Create(HINSTANCE instance, const Launcher* launcher,
                                   const Store* store, HWND dockHwnd, UINT stateMsg,
-                                  UINT chipClickMsg)
+                                  UINT chipClickMsg, UINT chipHoverMsg)
 {
     m_launcher     = launcher;
     m_store        = store;
     m_dockHwnd     = dockHwnd;
     m_stateMsg     = stateMsg;
     m_chipClickMsg = chipClickMsg;
+    m_chipHoverMsg = chipHoverMsg;
 
     WNDCLASSEXW wc = {};
     wc.cbSize        = sizeof(wc);
@@ -405,19 +420,37 @@ Renderer::GapLayout TaskbarOverlayWindow::ComputeGapLayout() const
 int TaskbarOverlayWindow::ButtonAt(POINT ptClient) const
 {
     if (!m_store) return -1;
-    const Renderer::GapLayout layout = ComputeGapLayout();
-    for (const Renderer::ButtonHit& h : layout.buttons)
-        if (PtInRect(&h.rect, ptClient)) return h.index;
-    return -1;
+    return ButtonHitOf(ComputeGapLayout(), ptClient);
 }
 
 HWND TaskbarOverlayWindow::ChipAt(POINT ptClient) const
 {
     if (!m_store) return nullptr;
-    const Renderer::GapLayout layout = ComputeGapLayout();
-    for (const Renderer::ChipHit& c : layout.chips)
-        if (PtInRect(&c.rect, ptClient)) return c.hwnd;
-    return nullptr;
+    return ChipHitOf(ComputeGapLayout(), ptClient);
+}
+
+void TaskbarOverlayWindow::UpdateHover(HWND chip)
+{
+    if (chip == m_hoverChip) return;
+    m_hoverChip = chip;
+    if (m_dockHwnd && m_chipHoverMsg)
+        PostMessageW(m_dockHwnd, m_chipHoverMsg, reinterpret_cast<WPARAM>(chip), 0);
+}
+
+bool TaskbarOverlayWindow::ChipRectScreen(HWND hwnd, RECT* out) const
+{
+    if (!m_store || !m_hwnd || !out) return false;
+    for (const Renderer::ChipHit& c : ComputeGapLayout().chips)
+    {
+        if (c.hwnd != hwnd) continue;
+        POINT tl = { c.rect.left,  c.rect.top };
+        POINT br = { c.rect.right, c.rect.bottom };
+        ClientToScreen(m_hwnd, &tl);
+        ClientToScreen(m_hwnd, &br);
+        *out = { tl.x, tl.y, br.x, br.y };
+        return true;
+    }
+    return false;
 }
 
 // static
@@ -459,10 +492,27 @@ LRESULT CALLBACK TaskbarOverlayWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM
         case WM_NCHITTEST:
         {
             // Only chips + pills are ours; everywhere else falls through to the taskbar.
-            // NCHITTEST lParam is in SCREEN coords — convert before hit-testing.
+            // NCHITTEST lParam is in SCREEN coords — convert before hit-testing. Drive hover
+            // from here (not WM_MOUSEMOVE): NCHITTEST fires on every move over the window
+            // rect regardless of the HTCLIENT/HTTRANSPARENT result, so it catches a
+            // chip→inter-chip-gap move that WM_MOUSEMOVE would miss (HTTRANSPARENT stops
+            // mouse-move delivery but does NOT fire WM_MOUSELEAVE — the stale-hover trap).
             POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
             ScreenToClient(hwnd, &pt);
-            return (self->ChipAt(pt) || self->ButtonAt(pt) >= 0) ? HTCLIENT : HTTRANSPARENT;
+            // Drive hover from the LIVE cursor, not the queried point: WM_NCHITTEST also
+            // fires for drag/drop queries whose point may not be the cursor (Raymond Chen),
+            // and a stray query must not drop hover while the cursor rests on a chip.
+            POINT cur;
+            const bool haveCur = GetCursorPos(&cur);
+            if (haveCur) ScreenToClient(hwnd, &cur);
+            if (!self->m_store)
+            {
+                if (haveCur) self->UpdateHover(nullptr);
+                return HTTRANSPARENT;
+            }
+            const Renderer::GapLayout layout = self->ComputeGapLayout();
+            if (haveCur) self->UpdateHover(ChipHitOf(layout, cur));
+            return (ChipHitOf(layout, pt) || ButtonHitOf(layout, pt) >= 0) ? HTCLIENT : HTTRANSPARENT;
         }
         case WM_LBUTTONUP:
         {
@@ -480,6 +530,21 @@ LRESULT CALLBACK TaskbarOverlayWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM
                 self->m_launcher->Execute(self->m_launcher->Buttons()[i]);
             return 0;
         }
+        case WM_MOUSEMOVE:
+            // Arm whole-overlay leave tracking: when the cursor leaves the window entirely
+            // (e.g. up into the fan), WM_MOUSELEAVE clears hover. Chip→gap transitions
+            // inside the window are handled by WM_NCHITTEST above.
+            if (!self->m_mouseTracking)
+            {
+                TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
+                TrackMouseEvent(&tme);
+                self->m_mouseTracking = true;
+            }
+            return 0;
+        case WM_MOUSELEAVE:
+            self->m_mouseTracking = false;
+            self->UpdateHover(nullptr);   // left the overlay → fan graces (may cross into it)
+            return 0;
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;
         case WM_TIMER:

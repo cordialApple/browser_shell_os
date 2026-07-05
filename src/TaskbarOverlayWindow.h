@@ -33,9 +33,15 @@ public:
     // own fallback strip (5b.3).
     // store: read-only, UI-thread only (like m_launcher) — the measurement worker never
     // touches it. chipClickMsg: posted to dockHwnd (wparam = window HWND) on a chip click.
+    // chipHoverMsg: posted to dockHwnd (wparam = hovered window HWND, or 0 on leave) as the
+    // hovered chip changes — the dock opens/graces the fan.
     bool Create(HINSTANCE instance, const Launcher* launcher, const Store* store,
-                HWND dockHwnd, UINT stateMsg, UINT chipClickMsg);
+                HWND dockHwnd, UINT stateMsg, UINT chipClickMsg, UINT chipHoverMsg);
     void Destroy();
+
+    // UI thread: screen rect of the chip for `hwnd` in the current layout, or false if it
+    // isn't currently shown as a chip. The dock anchors the fan above it.
+    bool ChipRectScreen(HWND hwnd, RECT* out) const;
 
     // Ask the worker to re-measure (non-blocking). Safe to call from a timer or
     // ABN_POSCHANGED / WM_DISPLAYCHANGE / WM_DPICHANGED on the UI thread.
@@ -67,6 +73,7 @@ private:
     void PostState();              // UI thread: tell the dock our host state (deduped)
     int  ButtonAt(POINT ptClient) const;   // UI thread: pill hit-test, or -1
     HWND ChipAt(POINT ptClient) const;     // UI thread: chip hit-test, or nullptr
+    void UpdateHover(HWND chip);           // UI thread: post chipHoverMsg on hover change
 
     const std::vector<Button>& Buttons() const;   // launcher's buttons, or empty
     Renderer::GapLayout ComputeGapLayout() const; // requires m_store
@@ -83,6 +90,9 @@ private:
     HWND            m_dockHwnd    = nullptr;
     UINT            m_stateMsg    = 0;
     UINT            m_chipClickMsg = 0;
+    UINT            m_chipHoverMsg = 0;
+    HWND            m_hoverChip   = nullptr;   // last chip we posted hover for (dedupe)
+    bool            m_mouseTracking = false;   // TME_LEAVE armed (whole-overlay leave)
     Gap             m_lastGap     = { {}, false };  // last measured gap, for RefreshContent re-fit
     bool            m_statePosted     = false;
     bool            m_lastPostedShown = false;
