@@ -97,6 +97,20 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-04 — Interactive-fan Step 4 done → fan now REACHABLE (hover-bridge). Was a real bug: dock
+  WM_MOUSELEAVE→ClearHover hid the fan instantly, so the cursor crossing the card→fan seam killed it before
+  a click (Step 3 unreachable without this). Fix: FanPopup grace timer (kGraceTimer, 200ms) + BeginGrace/
+  CancelGrace. Fan WM_MOUSEMOVE→CancelGrace (+TME_LEAVE, m_fanTracking-guarded); fan WM_MOUSELEAVE→BeginGrace;
+  fan WM_TIMER→Hide. Dock WM_MOUSEMOVE: CancelGrace over a card, instant ShowFanFor on card-switch when fan
+  already visible, BeginHoverGrace over empty dock; WM_MOUSELEAVE→BeginHoverGrace (defer, not hide). Grace
+  fires only when cursor is on neither window (each window's mouse-move cancels it) → close. Timer killed on
+  Hide/Destroy/WM_TIMER (all teardown paths). Burst (threading + AppBar-timer-teardown + DPI) → adjudicator
+  MAY PROCEED (only nit: benign redundant KillTimer, idempotent-teardown, left as-is). Simplifier extracted
+  BeginHoverGrace() helper (symmetric to ClearHover). Build clean. FEATURE NOW FULLY INTERACTIVE.
+  ⇒ VISUAL CHECK PENDING on Win11 (Steps 3+4 together): minimize a browser → hover its card → fan shows tabs
+  → slide up into the fan (must NOT vanish) → click a tab → window restores + that tab activates; also move
+  off → fan closes after ~200ms; hover a different card → fan switches instantly. Remaining: Step 5 empty-state
+  (paint-only, no AppBar churn; lenses DPI/paint + AppBar-assert-no-setpos).
 - 2026-07-04 — Interactive-fan Step 3 done → feature now END-TO-END (hover card → fan → click row → tab
   activates). FanPopup: Create(+ownerHwnd,+activateMsg), Show(+targetHwnd), RowAt hit-test (shares Paint's
   ScalePx(6/24) geometry; "+N more" row → -1), WM_LBUTTONDOWN → PostMessageW(kFanActivateMsg, target, idx)

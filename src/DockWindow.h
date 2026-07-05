@@ -40,6 +40,7 @@ private:
     const std::vector<Button>& DockButtons() const;  // launcher buttons, or none while gap hosts them
     void RestoreWindow(HWND target);
     void ClearHover();
+    void BeginHoverGrace();
     void RequestSnapshotDebounced(HWND hwnd);
 
     HWND              m_hwnd             = nullptr;

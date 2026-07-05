@@ -26,6 +26,14 @@ public:
               int cardLeftScreen, int cardRightScreen, int stripTopScreen, UINT dpi);
     void Hide();
 
+    // Hover-bridge: the fan is a separate window above the strip, so the cursor
+    // crossing the card→fan seam briefly leaves both. BeginGrace (from the dock's
+    // WM_MOUSELEAVE / off-card move) defers the close by a short timer; CancelGrace
+    // (cursor back on the fan or a card) keeps it open. Grace firing = cursor on
+    // neither window → Hide. UI thread only.
+    void BeginGrace();
+    void CancelGrace();
+
     HWND Hwnd() const { return m_hwnd; }
     bool Visible() const { return m_visible; }
 
@@ -42,6 +50,7 @@ private:
     UINT              m_activateMsg = 0;
     HWND              m_targetHwnd  = nullptr;
     bool              m_visible     = false;
+    bool              m_fanTracking = false;
     UINT              m_dpi         = 96;
     std::vector<Tab>  m_tabs;
     int               m_hiddenCount = 0;

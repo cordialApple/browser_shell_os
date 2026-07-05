@@ -6,7 +6,9 @@ using namespace Paint;
 
 namespace
 {
-    constexpr wchar_t kClassName[] = L"BrowserShellOsFanPopup";
+    constexpr wchar_t  kClassName[] = L"BrowserShellOsFanPopup";
+    constexpr UINT_PTR kGraceTimer  = 1;
+    constexpr UINT     kGraceMs     = 200;
 }
 
 FanPopup::~FanPopup()
@@ -45,6 +47,7 @@ void FanPopup::Destroy()
 {
     if (m_hwnd)
     {
+        KillTimer(m_hwnd, kGraceTimer);
         DestroyWindow(m_hwnd);
         m_hwnd = nullptr;
     }
@@ -111,11 +114,26 @@ void FanPopup::Show(HWND targetHwnd, const std::vector<Tab>& tabs,
 
 void FanPopup::Hide()
 {
+    if (m_hwnd)
+        KillTimer(m_hwnd, kGraceTimer);
     if (m_hwnd && m_visible)
     {
         ShowWindow(m_hwnd, SW_HIDE);
-        m_visible = false;
+        m_visible     = false;
+        m_fanTracking = false;
     }
+}
+
+void FanPopup::BeginGrace()
+{
+    if (m_hwnd && m_visible)
+        SetTimer(m_hwnd, kGraceTimer, kGraceMs, nullptr);
+}
+
+void FanPopup::CancelGrace()
+{
+    if (m_hwnd)
+        KillTimer(m_hwnd, kGraceTimer);
 }
 
 // static
@@ -149,6 +167,27 @@ LRESULT CALLBACK FanPopup::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPA
         }
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;   // MANDATORY: keeps the fan from stealing activation on hover/click (R1)
+        case WM_MOUSEMOVE:
+            self->CancelGrace();    // cursor is on the fan — keep it open
+            if (!self->m_fanTracking)
+            {
+                TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
+                TrackMouseEvent(&tme);
+                self->m_fanTracking = true;
+            }
+            return 0;
+        case WM_MOUSELEAVE:
+            self->m_fanTracking = false;
+            self->BeginGrace();     // left the fan — defer close in case we're heading to a card
+            return 0;
+        case WM_TIMER:
+            if (wparam == kGraceTimer)
+            {
+                KillTimer(hwnd, kGraceTimer);
+                self->Hide();       // grace expired with cursor on neither window
+                return 0;
+            }
+            break;
         case WM_LBUTTONDOWN:
         {
             const POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };

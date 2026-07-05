@@ -215,6 +215,15 @@ void DockWindow::ClearHover()
     if (m_fanPopup) m_fanPopup->Hide();
 }
 
+// Grace-variant of ClearHover: defer the fan's close instead of hiding at once,
+// so the cursor can cross the card→fan seam without the fan flickering shut.
+void DockWindow::BeginHoverGrace()
+{
+    KillTimer(m_hwnd, kHoverTimer);
+    m_hoverCard = nullptr;
+    if (m_fanPopup) m_fanPopup->BeginGrace();
+}
+
 // Coalesce snapshot requests: a burst (Win+M minimizing many windows, or a flood
 // of NAMECHANGE during page loads) collapses into one flush after 150ms of quiet,
 // so the UIA worker doesn't thrash. Foreground pre-warm stays immediate — it must
@@ -638,16 +647,20 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         const POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
         // A button overlays the card's top-right; don't fan the card underneath it.
         const HWND card = (ButtonAt(pt) >= 0) ? nullptr : CardAt(pt);
+        if (card && m_fanPopup) m_fanPopup->CancelGrace();  // cursor back over the dock → keep fan alive
         if (card != m_hoverCard)
         {
             m_hoverCard = card;
             if (card)
             {
-                SetTimer(hwnd, kHoverTimer, kHoverMs, nullptr);
+                if (m_fanPopup && m_fanPopup->Visible())
+                    ShowFanFor(card);   // instant switch to the newly hovered card's fan
+                else
+                    SetTimer(hwnd, kHoverTimer, kHoverMs, nullptr);  // delayed first-open
             }
             else
             {
-                ClearHover();
+                BeginHoverGrace();  // over empty dock → grace-close
             }
         }
         return 0;
@@ -655,7 +668,9 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
     case WM_MOUSELEAVE:
         m_mouseTracking = false;
-        ClearHover();
+        // Left the dock — but may be crossing into the fan; defer the close (BeginGrace
+        // no-ops if the fan isn't visible). The fan's own mouse tracking cancels grace.
+        BeginHoverGrace();
         return 0;
 
     case WM_LBUTTONUP:
