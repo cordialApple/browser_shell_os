@@ -1,6 +1,6 @@
 #include <windows.h>
 
-#include "DockWindow.h"
+#include "HostWindow.h"
 #include "WindowMonitor.h"
 
 namespace
@@ -45,7 +45,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR lpCmdLine, int)
         return 1;
     }
 
-    DockWindow dock;
+    HostWindow dock;
     if (!dock.Create(instance))
     {
         CloseHandle(mutex);

@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_executable(browser_shell_os WIN32
     src/main.cpp
-    src/DockWindow.cpp
+    src/HostWindow.cpp
     src/WindowMonitor.cpp
     src/Renderer.cpp
     src/Store.cpp

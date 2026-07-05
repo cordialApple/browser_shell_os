@@ -14,13 +14,13 @@
 // writer), TabReader, ConfigWatcher, Launcher, FanPopup, and the taskbar overlay.
 // Never shown — chips live in the overlay; there is no dock strip and no AppBar.
 // UI thread only owns this (CLAUDE.md rule 5).
-class DockWindow
+class HostWindow
 {
 public:
-    DockWindow() = default;
-    ~DockWindow();
-    DockWindow(const DockWindow&) = delete;
-    DockWindow& operator=(const DockWindow&) = delete;
+    HostWindow() = default;
+    ~HostWindow();
+    HostWindow(const HostWindow&) = delete;
+    HostWindow& operator=(const HostWindow&) = delete;
 
     bool Create(HINSTANCE instance);
 

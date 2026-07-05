@@ -1,10 +1,10 @@
-#include "DockWindow.h"
+#include "HostWindow.h"
 #include "WindowMonitor.h"
 #include <algorithm>
 
 namespace
 {
-    constexpr wchar_t kClassName[]      = L"BrowserShellOsDockWindow";
+    constexpr wchar_t kClassName[]      = L"BrowserShellOsHostWindow";
     constexpr UINT    kWindowEventMsg   = WM_APP + 2;
     constexpr UINT    kTabSnapshotMsg   = WM_APP + 3;
     constexpr UINT    kConfigChangedMsg = WM_APP + 4;
@@ -60,7 +60,7 @@ namespace
     }
 }
 
-DockWindow::~DockWindow()
+HostWindow::~HostWindow()
 {
     // Covers GetMessage==-1 abnormal exit: destructor fires, window not yet
     // destroyed, so we destroy it here to guarantee an orderly WM_DESTROY teardown.
@@ -70,7 +70,7 @@ DockWindow::~DockWindow()
     }
 }
 
-bool DockWindow::Create(HINSTANCE instance)
+bool HostWindow::Create(HINSTANCE instance)
 {
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(wc);
@@ -177,7 +177,7 @@ bool DockWindow::Create(HINSTANCE instance)
 // A fullscreen app fills rcMonitor (a merely-maximized window stops at rcWork, above
 // the taskbar) on the same monitor as the taskbar overlay. The hidden host is 1x1 at
 // origin, so derive the monitor from the overlay's taskbar. ±2px tolerance for scaling.
-bool DockWindow::FullscreenOnDockMonitor(HWND fg) const
+bool HostWindow::FullscreenOnDockMonitor(HWND fg) const
 {
     if (!fg || fg == GetDesktopWindow() || fg == GetShellWindow()) return false;
     RECT r;
@@ -200,7 +200,7 @@ bool DockWindow::FullscreenOnDockMonitor(HWND fg) const
 // LOCATIONCHANGE — a measure-driven overlay would stay stuck hidden. Drive suppression
 // off the foreground window (flyout process) + the fullscreen state instead, and kick a
 // delayed re-measure on release so the taskbar animation has settled first.
-void DockWindow::UpdateOverlaySuppression()
+void HostWindow::UpdateOverlaySuppression()
 {
     if (!m_taskbarOverlay) return;
     const HWND fg = GetForegroundWindow();
@@ -218,7 +218,7 @@ void DockWindow::UpdateOverlaySuppression()
 // (Re)scope the LOCATIONCHANGE hook to the live explorer PID. On an explorer restart the
 // old hook is dead (its PID is gone), so without this the gap would never re-measure again
 // — the overlay would freeze at its last position. Idempotent: unhook-then-hook.
-void DockWindow::HookTaskbarLocation()
+void HostWindow::HookTaskbarLocation()
 {
     if (m_winEventHookLocation)
     {
@@ -236,7 +236,7 @@ void DockWindow::HookTaskbarLocation()
 // of NAMECHANGE during page loads) collapses into one flush after 150ms of quiet,
 // so the UIA worker doesn't thrash. Foreground pre-warm stays immediate — it must
 // beat the minimized window's UIA tree-strip.
-void DockWindow::RequestSnapshotDebounced(HWND hwnd)
+void HostWindow::RequestSnapshotDebounced(HWND hwnd)
 {
     if (std::find(m_pendingSnapshots.begin(), m_pendingSnapshots.end(), hwnd)
             == m_pendingSnapshots.end())
@@ -248,7 +248,7 @@ void DockWindow::RequestSnapshotDebounced(HWND hwnd)
 // queue can't block our UI pump. SetForegroundWindow is restricted when we
 // aren't the foreground process; on failure flash the taskbar button instead
 // (documented + non-blocking, unlike SwitchToThisWindow/AttachThreadInput).
-void DockWindow::RestoreWindow(HWND target)
+void HostWindow::RestoreWindow(HWND target)
 {
     if (!target) return;
     ShowWindowAsync(target, SW_RESTORE);
@@ -262,7 +262,7 @@ void DockWindow::RestoreWindow(HWND target)
 // Anchor the fan above a taskbar chip. The chip's screen rect comes from the overlay
 // (same UI thread — direct query, no cross-thread post); the fan grows upward from the
 // chip's top edge so chip and fan are edge-adjacent (minimal hover seam).
-void DockWindow::ShowFanForChip(HWND chip)
+void HostWindow::ShowFanForChip(HWND chip)
 {
     if (!chip || !m_fanPopup || !m_taskbarOverlay) return;
     const auto& all = m_store.All();
@@ -276,21 +276,21 @@ void DockWindow::ShowFanForChip(HWND chip)
                      GetDpiForWindow(m_taskbarOverlay->Hwnd()));
 }
 
-LRESULT CALLBACK DockWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+LRESULT CALLBACK HostWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     // Messages before WM_NCCREATE (WM_GETMINMAXINFO, WM_NCCALCSIZE) come with
     // GWLP_USERDATA unset -> self==nullptr -> fall to DefWindowProcW. Keep guard.
-    DockWindow* self = nullptr;
+    HostWindow* self = nullptr;
     if (msg == WM_NCCREATE)
     {
         const auto* cs = reinterpret_cast<CREATESTRUCTW*>(lparam);
-        self = static_cast<DockWindow*>(cs->lpCreateParams);
+        self = static_cast<HostWindow*>(cs->lpCreateParams);
         self->m_hwnd = hwnd;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
     }
     else
     {
-        self = reinterpret_cast<DockWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+        self = reinterpret_cast<HostWindow*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
 
     // WndProc has no WM_NCCREATE arm -> DefWindowProcW return TRUE, creation
@@ -303,7 +303,7 @@ LRESULT CALLBACK DockWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, L
 }
 
 // static
-void CALLBACK DockWindow::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd,
+void CALLBACK HostWindow::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd,
                                         LONG idObject, LONG, DWORD, DWORD) noexcept
 {
     if (!hwnd || !s_dockHwnd) return;
@@ -320,7 +320,7 @@ void CALLBACK DockWindow::WinEventProc(HWINEVENTHOOK, DWORD event, HWND hwnd,
                  static_cast<WPARAM>(event), reinterpret_cast<LPARAM>(hwnd));
 }
 
-LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
+LRESULT HostWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 {
     // Explorer (re)created the taskbar. RegisterWindowMessageW ids aren't compile-time
     // constants, so this can't be a switch arm. The old PID-scoped LOCATIONCHANGE hook is
