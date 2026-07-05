@@ -91,19 +91,12 @@ void FanPopup::Show(HWND targetHwnd, const std::vector<Tab>& tabs,
     if (maxRows < 1) maxRows = 1;
 
     const int total = static_cast<int>(tabs.size());
-    int shown = total;
-    m_hiddenCount = 0;
-    if (total > maxRows)
-    {
-        shown = maxRows - 1;          // reserve the last row for the "+N more" line
-        if (shown < 1) shown = 1;
-        m_hiddenCount = total - shown;
-    }
+    const int shown = total > maxRows ? maxRows : total;   // silent cap; no "+N more" trailer
 
     m_tabs.assign(tabs.begin(), tabs.begin() + shown);
+    m_hoverRow = -1;
 
-    const int rows   = shown + (m_hiddenCount > 0 ? 1 : 0);
-    int height = rows * rowH + pad * 2;
+    int height = shown * rowH + pad * 2;
     if (height > avail) height = avail;   // never overflow above the monitor top
     const int top = anchorTopScreen - height;
 
@@ -182,6 +175,7 @@ LRESULT CALLBACK FanPopup::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPA
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;   // MANDATORY: keeps the fan from stealing activation on hover/click (R1)
         case WM_MOUSEMOVE:
+        {
             self->CancelGrace();    // cursor is on the fan — keep it open
             if (!self->m_fanTracking)
             {
@@ -189,9 +183,22 @@ LRESULT CALLBACK FanPopup::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPA
                 TrackMouseEvent(&tme);
                 self->m_fanTracking = true;
             }
+            const POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
+            const int hr = self->RowAt(pt);
+            if (hr != self->m_hoverRow)
+            {
+                self->m_hoverRow = hr;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
             return 0;
+        }
         case WM_MOUSELEAVE:
             self->m_fanTracking = false;
+            if (self->m_hoverRow != -1)
+            {
+                self->m_hoverRow = -1;
+                InvalidateRect(hwnd, nullptr, FALSE);
+            }
             self->BeginGrace();     // left the fan — defer close in case we're heading to a card
             return 0;
         case WM_TIMER:
@@ -240,12 +247,11 @@ int FanPopup::RowAt(POINT ptClient) const
 
     RECT rc;
     GetClientRect(m_hwnd, &rc);
-    if (ptClient.x < rc.left + pad || ptClient.x > rc.right - pad) return -1;
+    if (ptClient.x < rc.left + pad || ptClient.x >= rc.right - pad) return -1;
 
     const int rel = ptClient.y - (rc.top + pad);
     if (rel < 0) return -1;
     const int row = rel / rowH;
-    // Only the shown tab rows are clickable; the "+N more" overflow row is not.
     return (row < static_cast<int>(m_tabs.size())) ? row : -1;
 }
 
@@ -269,12 +275,14 @@ void FanPopup::Paint(HDC hdc)
     HFONT old     = static_cast<HFONT>(SelectObject(hdc, rowFont));
 
     int y = rc.top + pad;
-    for (const Tab& tab : m_tabs)
+    for (int i = 0; i < static_cast<int>(m_tabs.size()); ++i)
     {
+        const Tab& tab = m_tabs[i];
         RECT row = { rc.left + pad, y, rc.right - pad, y + rowH };
-        if (tab.active)
+        const COLORREF fill = tab.active ? kChipActiveBg : (i == m_hoverRow ? kRowHover : 0);
+        if (fill)
         {
-            HBRUSH hl = CreateSolidBrush(kChipActiveBg);
+            HBRUSH hl = CreateSolidBrush(fill);
             FillRect(hdc, &row, hl);
             DeleteObject(hl);
         }
@@ -283,15 +291,6 @@ void FanPopup::Paint(HDC hdc)
         DrawTextW(hdc, tab.title.c_str(), -1, &txt,
                   DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
         y += rowH;
-    }
-
-    if (m_hiddenCount > 0)
-    {
-        wchar_t buf[24];
-        swprintf_s(buf, L"+%d more", m_hiddenCount);
-        RECT row = { rc.left + pad + chipPad, y, rc.right - pad - chipPad, y + rowH };
-        SetTextColor(hdc, kTextSecond);
-        DrawTextW(hdc, buf, -1, &row, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
 
     SelectObject(hdc, old);

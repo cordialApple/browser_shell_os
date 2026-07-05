@@ -42,7 +42,7 @@ private:
     void Paint(HDC hdc);
     // Displayed-row hit-test in client coords; shares Paint's geometry. Returns the
     // index into the ORIGINAL tab vector (== displayed row, tabs shown contiguously
-    // from the front), or -1 for the "+N more" row / outside any clickable row.
+    // from the front), or -1 for outside any clickable row.
     int  RowAt(POINT ptClient) const;
     bool CursorInFan() const;
 
@@ -54,5 +54,5 @@ private:
     bool              m_fanTracking = false;
     UINT              m_dpi         = 96;
     std::vector<Tab>  m_tabs;
-    int               m_hiddenCount = 0;
+    int               m_hoverRow    = -1;
 };

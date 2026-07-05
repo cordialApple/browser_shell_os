@@ -37,7 +37,7 @@ performance over ETW.
 | Profiler (parallel workstream) | 🟡 consumer P.2–P.4 code complete + builds green; P.1 shell emit not done — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
-**Next action: chip-rework Stage 4 (dead-code purge + rename + docs). Stages 1–3 code-complete + MAY PROCEED; Windows visual check pending (see below).**
+**Next action: chip-rework Stage 4 IN PROGRESS. Dead-code purge DONE (Renderer/PaintUtil); `DockWindow`→`HostWindow` rename + CLAUDE.md/ARCHITECTURE "dock" wording DEFERRED until the parallel overlay-persistence/perf agent (worktree) merges — renaming those files now would wreck its merge. Then: fan polish (B kill "+N more", C hover-follow color), A pill icon-fallback (from target exe), D Theme-struct + GradientFill. Stages 1–3 Windows visual check still pending (see below).**
 Active workstream: **taskbar-chip rework** — kill the dock, put minimized-window chips in the taskbar gap
 (plan: `~/.claude/plans/dreamy-stirring-walrus.md`; feasibility: `docs/research/taskbar-chip-feasibility.md`).
 Stage 1 done: chips (minimized windows, title-only, insertion-ordered) render side-by-side in the gap
@@ -133,6 +133,15 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-05 — Chip-rework Stage 4 started: dead-code purge. Deleted `Renderer::Paint`(dock)/`CardLayout`/
+  `CardHit`/`DrawCard`/`ButtonLayout`/`GapButtonLayout` + PaintUtil `kBandHeightDip`/`kBandPadDip`/`kMaxBands`/
+  `kChipBg` (all self-referential, zero live callers — overlay paints via `TaskbarOverlayWindow::Paint`→
+  `GapChipLayout`+`DrawChip`+`DrawButton`). Grep confirms 0 dangling refs; compile clean (both TUs), link
+  blocked only by running dock PID lock (LNK1168, not code). Rename `DockWindow`→`HostWindow` + rule-2/ARCH
+  wording DEFERRED behind a parallel Opus worktree agent hardening overlay persistence/perf (survive taskbar
+  button changes when opening apps like a terminal; explorer-restart re-hook; cache TaskbarMonitor OpenProcess).
+  User design decisions locked: (A) pill icon-fallback icons = extract from target exe; (D) colorway = Theme
+  struct + GradientFill first (defer bubbles = alpha/UpdateLayeredWindow rework). B/C = fan polish next.
 - 2026-07-05 — Chip-rework Stage 2 done (fan from chips). Overlay: `WM_NCHITTEST`-driven hover (live cursor via
   GetCursorPos so a spurious drag query can't drop hover), `UpdateHover`→`kChipHoverMsg`(HWND/0), `ChipRectScreen`.
   Dock: `kChipHoverMsg`→`ShowFanForChip` (anchors fan above the chip, edge-adjacent) / `BeginGrace` on 0. FanPopup:
