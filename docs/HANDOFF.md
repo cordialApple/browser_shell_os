@@ -37,6 +37,10 @@ performance over ETW.
 | Profiler (parallel workstream) | 🟡 consumer P.2–P.4 code complete + builds green; P.1 shell emit not done — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
+**TOP PRIORITY next session: fix overlay instability (see session-log 2026-07-05 OPEN BUG) — AV crash +
+stuck-empty overlay on terminal-churn. Likely fix: drop the per-foreground LOCATIONCHANGE hook, poll fullscreen
+via the safety timer; harden the measure re-fit + re-assert HWND_TOPMOST.**
+
 **Next action: chip-rework Stage 4 CODE-COMPLETE — dead-code purge + `DockWindow`→`HostWindow` rename (aa84dc1) + overlay persistence/perf hardening (a3d8cbc) + fan polish B/C (bd645fd) all committed. Remaining tiny doc polish: reword CLAUDE.md rule 4 (AppBar hygiene → "no AppBar registered; ABM_GETSTATE query-only") + ARCHITECTURE "dock strip" mentions (deferred, low-pri; rule 4 still valid vacuously). DONE since: quit-affordance fix, D (themes+gradient), fullscreen-in-place suppression fix. NEXT FEATURE: A =
 pill icon-fallback, icons extracted from each button's target exe (shrink pill→~28px icon square before dropping
 when gap tight; NO icon render exists today — medium; touches Renderer DrawButton/GapChipLayout + new icon cache
@@ -138,6 +142,28 @@ stages, move the **NEXT** marker), rewrite the "Next action" line, and append
 one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
+
+- 2026-07-05 — **OPEN BUG (top priority next session): overlay instability on first real run.** The chip-rework
+  build finally ran (link was blocked all prior sessions by the live dock). Two failure modes when the user
+  rapidly opens/closes a terminal (taskbar churn) with a browser minimized: (1) AV `0xC0000005` — process dies
+  (WER: fault RVA 0x93fb, maps near a folded std::wstring ctor / Store region — unreliable, COMDAT folding);
+  (2) overlay STUCK visible-but-empty — window IsWindowVisible=true + sized to gap (353x48) but paints 0
+  chips/0 pills → transparent → "gone", process ALIVE. HEISENBUG: any layout perturbation (crash probe, ASan)
+  masks the AV → race or uninitialized-read; MSVC ASan found NO heap UAF/overflow. NOT reproducible in dev env
+  with notepad churn @200% DPI (overlay.log showed chips=1 pills=2 painting fine); user env differs (user
+  overlay 353px≈100%, dev 706px@192 → possible mixed-DPI/multi-monitor). PRIME SUSPECT: this session's
+  fullscreen fix (c3d0caa) added a per-foreground-window EVENT_OBJECT_LOCATIONCHANGE hook
+  (`HookForegroundLocation`, re-scoped on EVERY foreground change) + kFgLocationMsg/kSuppressTimer + always-on
+  safety-timer suppression re-derive → rapid foreground churn hammers it. RECOMMENDED FIX: drop the per-fg
+  LOCATIONCHANGE hook; detect in-place fullscreen via the 1.5s safety-timer poll only (keeps feature, ~1.5s
+  latency, far less churn — matches user's "don't listen to so many events" ask). Also harden the measure
+  re-fit against the stuck visible-but-empty state (shown window with empty GapChipLayout, and re-assert
+  HWND_TOPMOST in case the overlay is z-occluded behind the taskbar after a taskbar re-layout). KEEP gap re-fit
+  on taskbar change (debounced) — the user still wants it to re-fit when a terminal opens. Diagnostics used
+  (all reverted/uncommitted): crash probe (SetUnhandledExceptionFilter+dbghelp StackWalk→crash.txt), overlay.log
+  paint logging, ASan build (/fsanitize=address, strip /RTC1), /MAP symbol resolve. Also this session: metallic
+  theme polish committed (specular FillMetallic on pills+chips, chips brightened to match) — user wanted the
+  metallic to read right on chips.
 
 - 2026-07-05 — Feature D (themes+gradient) + fullscreen-suppression fix, both by parallel Opus worktree agents,
   merged clean (non-overlapping files). D: `Paint::Theme` struct + `FillVGradient` (msimg32 `GradientFill`) +
