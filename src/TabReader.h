@@ -6,6 +6,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <atomic>
+#include <memory>
 #include "Store.h"
 
 #include <string>
@@ -51,13 +52,22 @@ private:
 
     void WorkerLoop();
 
+    // Set by the worker when WorkerLoop() returns. shared_ptr so it outlives the
+    // TabReader when a wedged worker is detached at teardown (F-02 bounded join).
+    struct ExitSignal {
+        std::mutex              m;
+        std::condition_variable cv;
+        bool                    exited = false;
+    };
+
     HWND m_dockHwnd;
     UINT m_snapshotMsg;
     UINT m_activateMsg;
 
-    std::thread             m_thread;
-    std::mutex              m_mutex;
-    std::condition_variable m_cv;
-    std::deque<Request>     m_queue;
-    std::atomic<bool>       m_stop{false};
+    std::thread                 m_thread;
+    std::mutex                  m_mutex;
+    std::condition_variable     m_cv;
+    std::deque<Request>         m_queue;
+    std::atomic<bool>           m_stop{false};
+    std::shared_ptr<ExitSignal> m_exit;
 };

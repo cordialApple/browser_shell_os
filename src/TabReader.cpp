@@ -352,9 +352,17 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
 } // namespace
 
 TabReader::TabReader(HWND dockHwnd, UINT snapshotMsg, UINT activateMsg)
-    : m_dockHwnd(dockHwnd), m_snapshotMsg(snapshotMsg), m_activateMsg(activateMsg)
+    : m_dockHwnd(dockHwnd), m_snapshotMsg(snapshotMsg), m_activateMsg(activateMsg),
+      m_exit(std::make_shared<ExitSignal>())
 {
-    m_thread = std::thread([this] { WorkerLoop(); });
+    m_thread = std::thread([this, exit = m_exit] {
+        WorkerLoop();
+        {
+            std::lock_guard<std::mutex> lk(exit->m);
+            exit->exited = true;
+        }
+        exit->cv.notify_all();
+    });
 }
 
 TabReader::~TabReader()
@@ -364,8 +372,26 @@ TabReader::~TabReader()
         m_stop = true;
     }
     m_cv.notify_one();
-    if (m_thread.joinable())
+
+    // m_stop only bounds the sleeps; it cannot interrupt an in-flight cross-process
+    // UIA/COM call into a wedged browser provider — ActivateTab's Select/SetFocus/
+    // DoDefaultAction OR SnapshotTabs/FindLiveTabItems' FindAll (F-02). A plain join()
+    // would then stall WM_DESTROY forever, and with it AppBarRemove (hard rule 4 — dead
+    // strip until explorer restarts). Bounded-join instead: give an in-flight call a
+    // moment to finish, else detach so teardown proceeds. Detach is shutdown-only: if
+    // the call unhangs while the process is still tearing down (WM_DESTROY → message
+    // loop exit, tens–hundreds of ms), the leaked worker touches freed members — UB,
+    // but unobservable since the process is exiting.
+    bool exited = false;
+    {
+        std::unique_lock<std::mutex> lk(m_exit->m);
+        exited = m_exit->cv.wait_for(lk, std::chrono::seconds(2),
+                                     [this] { return m_exit->exited; });
+    }
+    if (exited)
         m_thread.join();
+    else if (m_thread.joinable())
+        m_thread.detach();
 }
 
 void TabReader::RequestSnapshot(HWND hwnd)

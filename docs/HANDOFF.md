@@ -51,11 +51,12 @@ radius-vs-diameter (cosmetic). Also still pending 5a check: dock grows on minimi
 (%LOCALAPPDATA%\browser_shell_os\config.txt). Profiler workstream still unstarted (see profiler.md).
 
 Deferred debt:
-- [F-02 activate-com-hang] TabReader::ActivateTab drives cross-process COM (Select/DoDefaultAction)
-  into the browser provider from the MTA worker; a hung provider can block the worker unbounded →
-  ~TabReader join → AppBarRemove stalls. Pre-existing parity w/ SnapshotTabs, but activate drives
-  provider-side ACTIONS (bigger surface). m_stop fix bounds the sleeps, NOT a hung COM call. Follow-up:
-  bounded-wait/watchdog (CoWaitForMultipleHandles-style). Isolated in TabReader (rule 6 OK).
+- [F-02 activate-com-hang] ✅ RESOLVED 2026-07-04 — ~TabReader now bounded-joins (2s wait on a
+  lifetime-safe shared ExitSignal), then join()s a clean exit or detach()es a worker wedged in an
+  uninterruptible cross-process UIA/COM call (ActivateTab Select/SetFocus/DoDefaultAction OR
+  SnapshotTabs FindAll). WM_DESTROY → AppBarRemove can no longer stall (hard rule 4). Residual: a
+  detached worker touching freed members is shutdown-only UB, unobservable (process exiting) — documented
+  at the fix site. Burst (AppBar-hygiene + threading) → adjudicator MAY PROCEED. Isolated in TabReader.
 - [renderer-tiny-card] Very narrow cards (rowW < ~48px, i.e. many minimized windows) drop the
   "+N" overflow indicator silently. Degenerate many-window case; revisit if window count grows.
 - [tabreader-locale] CleanTabTitle strips English suffixes only (" - Sleeping", " - Pinned",
@@ -97,6 +98,18 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-04 — Carried-debt polish: F-02 (activate-com-hang) RESOLVED. Root cause: ~TabReader's
+  unconditional join() could block forever on a worker wedged in an uninterruptible cross-process
+  UIA/COM call; since WM_DESTROY resets TabReader (line 702) BEFORE AppBarRemove (line 715), that
+  meant ABM_REMOVE never ran → dead strip (hard rule 4). Fix (isolated in TabReader, rule 6):
+  bounded-join — set m_stop/notify, wait_for(2s) on a shared_ptr<ExitSignal> the worker sets after
+  WorkerLoop returns, then join() clean or detach() wedged. WM_ENDSESSION path already AppBarRemove's
+  first (line 441), so only the normal-quit path was exposed. Compile clean (link blocked only by the
+  running dock PID 29992 holding the exe lock — not killed). Burst (AppBar-hygiene + threading) →
+  adjudicator MAY PROCEED; applied both warnings (comment now names SnapshotTabs path + corrects the
+  race-window claim). Residual detach UAF is shutdown-only + unobservable, documented at fix site.
+  Simplifier skipped (small vetted threading fix). Runtime verify pending on Windows (close running
+  instance to relink). Remaining open debt: renderer-tiny-card, tabreader-locale, DPI multi-monitor.
 - 2026-07-04 — Interactive-fan post-accept fixes (user tested steps 1-5, all 3 behaviors work). (A) Multi-window
   fan-nav bug: vertical card stacking means moving from a lower card up to its fan transits the cards above it;
   Step-4 instant-switch hijacked the fan mid-transit. Fix: reverted to DELAYED switch — a newly hovered card
