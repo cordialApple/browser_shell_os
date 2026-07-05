@@ -36,6 +36,11 @@ public:
     // ABN_POSCHANGED / WM_DISPLAYCHANGE / WM_DPICHANGED on the UI thread.
     void RequestMeasure();
 
+    // UI thread. Force-hide the overlay regardless of the measured gap (Start/Search
+    // flyout open, or a fullscreen app on the taskbar's monitor). While suppressed the
+    // overlay never shows. The caller re-measures after clearing suppression.
+    void SetSuppressed(bool suppressed);
+
     HWND Hwnd() const { return m_hwnd; }
 
 private:
@@ -44,6 +49,7 @@ private:
     static LRESULT CALLBACK StaticWndProc(HWND, UINT, WPARAM, LPARAM);
     void Paint(HDC hdc);
     void ApplyGap(const Gap& g);   // UI thread: position/show/hide the overlay
+    void PostState();              // UI thread: tell the dock our host state (deduped)
     int  ButtonAt(POINT ptClient) const;   // UI thread: pill hit-test, or -1
 
     void WorkerLoop();             // worker thread: owns IUIAutomation
@@ -56,7 +62,10 @@ private:
     const Launcher* m_launcher = nullptr;
     HWND            m_dockHwnd   = nullptr;
     UINT            m_stateMsg   = 0;
-    bool            m_statePosted = false;
+    bool            m_statePosted     = false;
+    bool            m_lastPostedShown = false;
+    bool            m_suppressed      = false;  // flyout/fullscreen force-hide (UI thread)
+    int             m_invalidStreak   = 0;      // consecutive bad measures (hysteresis, UI thread)
 
     std::thread             m_thread;
     std::mutex              m_mutex;

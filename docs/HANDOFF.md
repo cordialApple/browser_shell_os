@@ -98,6 +98,23 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-04 — Gap-pill (Stage 5b overlay) stability fixes — worked w/ win32-scout advisor. User reported 3
+  bugs: (1) YouTube/browser fullscreen didn't hide pills; (2) Start-click → pills stuck hidden; (3) intermittent
+  flapping. Advisor root causes: (1) ABN_FULLSCREENAPP only moves the DOCK — overlay is a separate topmost
+  window w/ no fullscreen path; (2) Start/Search use DWM cloaking (StartMenuExperienceHost.exe/SearchHost.exe)
+  → no taskbar geometry event on close → measure-driven overlay never recovers; (3) task-button UIA rects read
+  {0,0,0,0} mid-animation → transient invalid → hide/show churn (PID-scoping already handled cursor noise).
+  Fixes (isolated in TaskbarOverlayWindow + dock handlers, rule 6): overlay SetSuppressed(force-hide) + ApplyGap
+  hysteresis (one 300ms kRetryTimer before hiding a healthy overlay); dock UpdateOverlaySuppression = m_flyoutOpen
+  (foreground proc classify) || FullscreenOnDockMonitor (fg rect==dock-monitor rcMonitor ±2px, NOT a latch),
+  wired into existing EVENT_SYSTEM_FOREGROUND + ABN_FULLSCREENAPP; periodic kSafetyTimer(1500ms) self-heals any
+  missed clearing event (re-derive while suppressed, re-measure while hidden — gated !m_gapActive so no
+  steady-state churn). Burst: threading + DPI + stuck-state (3 inspectors) → 4 stuck-state regressions found →
+  fixed (dropped m_fullscreenApp latch, added safety timer) → re-burst stuck-state CLOSED → adjudicator
+  MAY PROCEED (residuals: OpenProcess AV-stall bounded; flag-divergence unreachable; both nits addressed —
+  ±2px tol, safety churn gate). AppBar invariant verified (kSafetyTimer killed in WM_DESTROY + WM_ENDSESSION).
+  Build green. ⇒ VISUAL CHECK PENDING on Win11: open/close Start+Search → pills return; drag windows → no
+  flapping; YouTube fullscreen in → pills vanish, exit → pills return; multi-monitor fullscreen (edge).
 - 2026-07-04 — Carried-debt polish: F-02 (activate-com-hang) RESOLVED. Root cause: ~TabReader's
   unconditional join() could block forever on a worker wedged in an uninterruptible cross-process
   UIA/COM call; since WM_DESTROY resets TabReader (line 702) BEFORE AppBarRemove (line 715), that

@@ -42,6 +42,11 @@ private:
     void ClearHover();
     void BeginHoverGrace();
     void RequestSnapshotDebounced(HWND hwnd);
+    // Hide the gap overlay while a Start/Search flyout is open or a fullscreen app owns
+    // the taskbar's monitor; re-measure once it clears. All heuristics isolated here +
+    // in TaskbarOverlayWindow (rule 6).
+    void UpdateOverlaySuppression();
+    bool FullscreenOnDockMonitor(HWND fg) const;
 
     HWND              m_hwnd             = nullptr;
     APPBARDATA        m_abd              = {};
@@ -57,6 +62,7 @@ private:
     HWINEVENTHOOK     m_winEventHookLocation   = nullptr;
     bool              m_gapActive              = false;
     bool              m_gapResolved            = false;  // first overlay verdict seen? (avoids startup double-show)
+    bool              m_overlaySuppressed      = false;  // current overlay suppression (dedupes)
     std::unique_ptr<TabReader>     m_tabReader;
     std::unique_ptr<FanPopup>      m_fanPopup;
     std::unique_ptr<ConfigWatcher> m_configWatcher;

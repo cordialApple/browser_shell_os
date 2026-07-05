@@ -15,7 +15,9 @@ using Microsoft::WRL::ComPtr;
 namespace
 {
     constexpr wchar_t kClassName[] = L"BrowserShellOsTaskbarOverlay";
-    constexpr UINT    kApplyGapMsg = WM_APP + 1;
+    constexpr UINT     kApplyGapMsg = WM_APP + 1;
+    constexpr UINT_PTR kRetryTimer  = 1;    // hysteresis: re-measure once before hiding
+    constexpr UINT     kRetryMs      = 300;  // ~one XAML taskbar animation cycle
 
     // LWA_COLORKEY makes kColorKey fully see-through, so the gap shows through the
     // overlay everywhere except the pills the buttons paint.
@@ -308,7 +310,7 @@ void TaskbarOverlayWindow::ApplyGap(const Gap& g)
     // Size to the gap first (visibility unchanged), then show only if a pill actually
     // fits — a valid-but-too-narrow gap must not leave a do-nothing topmost window.
     bool fits = false;
-    if (g.valid)
+    if (g.valid && !m_suppressed)
     {
         SetWindowPos(m_hwnd, HWND_TOPMOST,
                      g.rc.left, g.rc.top,
@@ -320,24 +322,58 @@ void TaskbarOverlayWindow::ApplyGap(const Gap& g)
                    client, GetDpiForWindow(m_hwnd), m_launcher->Buttons()).empty();
     }
 
-    const bool was = m_shown;
-    if (!fits)
+    if (fits)
     {
-        if (m_shown) { ShowWindow(m_hwnd, SW_HIDE); m_shown = false; }
-    }
-    else
-    {
+        m_invalidStreak = 0;
+        KillTimer(m_hwnd, kRetryTimer);
         if (!m_shown) { ShowWindow(m_hwnd, SW_SHOWNOACTIVATE); m_shown = true; }
         InvalidateRect(m_hwnd, nullptr, TRUE);
         UpdateWindow(m_hwnd);
+        PostState();
+        return;
     }
-    // Tell the dock on the first verdict too (not just flips), so it knows whether to
-    // show its fallback strip instead of waiting — and never double-shows at startup.
-    if ((m_shown != was || !m_statePosted) && m_dockHwnd)
+
+    // Hide candidate. A UIA read taken mid-taskbar-animation returns zero bounding
+    // rects → a spurious invalid; don't yank a healthy overlay on the first one. Retry
+    // once ~one animation cycle later and hide only if it's still gone. Suppression
+    // (flyout/fullscreen) is a genuine hide — skip hysteresis, drop immediately.
+    if (m_shown && !m_suppressed && m_invalidStreak == 0)
     {
-        m_statePosted = true;
+        m_invalidStreak = 1;
+        SetTimer(m_hwnd, kRetryTimer, kRetryMs, nullptr);
+        return;
+    }
+    m_invalidStreak = 0;
+    KillTimer(m_hwnd, kRetryTimer);
+    if (m_shown) { ShowWindow(m_hwnd, SW_HIDE); m_shown = false; }
+    PostState();
+}
+
+// Tell the dock on the first verdict too (not just flips), so it knows whether to show
+// its fallback strip instead of waiting — and never double-shows at startup.
+void TaskbarOverlayWindow::PostState()
+{
+    if (m_dockHwnd && (m_shown != m_lastPostedShown || !m_statePosted))
+    {
+        m_statePosted     = true;
+        m_lastPostedShown = m_shown;
         PostMessageW(m_dockHwnd, m_stateMsg, m_shown ? 1 : 0, 0);
     }
+}
+
+void TaskbarOverlayWindow::SetSuppressed(bool suppressed)
+{
+    if (m_suppressed == suppressed) return;
+    m_suppressed = suppressed;
+    if (!m_hwnd) return;
+    if (suppressed)
+    {
+        m_invalidStreak = 0;
+        KillTimer(m_hwnd, kRetryTimer);
+        if (m_shown) { ShowWindow(m_hwnd, SW_HIDE); m_shown = false; PostState(); }
+    }
+    // Un-suppress: the dock schedules a re-measure once the flyout/fullscreen animation
+    // settles — an immediate re-measure would just catch zero rects again.
 }
 
 int TaskbarOverlayWindow::ButtonAt(POINT ptClient) const
@@ -403,6 +439,9 @@ LRESULT CALLBACK TaskbarOverlayWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM
         }
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;
+        case WM_TIMER:
+            if (wparam == kRetryTimer) { KillTimer(hwnd, kRetryTimer); self->RequestMeasure(); }
+            return 0;
         }
     }
     return DefWindowProcW(hwnd, msg, wparam, lparam);

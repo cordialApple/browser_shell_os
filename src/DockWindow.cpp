@@ -31,6 +31,11 @@ namespace
     constexpr UINT_PTR kOverlayTimer    = 5;
     constexpr UINT    kOverlayMs        = 200;
     constexpr UINT    kResumeRemeasureMs = 500;  // let the shell settle after wake before re-measuring
+    // Low-frequency safety re-check: self-heals the overlay from any stuck-hidden /
+    // stuck-suppressed state whose clearing event was missed (Start self-dismiss, a
+    // dropped ABN_FULLSCREENAPP exit, a transient invalid with no follow-up LOCATIONCHANGE).
+    constexpr UINT_PTR kSafetyTimer     = 6;
+    constexpr UINT    kSafetyMs         = 1500;
 
     // Single-instance: safe to keep a plain HWND here for the WinEventProc callback.
     // Written on the UI thread in Create/WM_DESTROY; read on the same thread in WinEventProc
@@ -42,6 +47,23 @@ namespace
         wchar_t title[256] = {};
         GetWindowTextW(hwnd, title, _countof(title));
         store.Set(hwnd, title);
+    }
+
+    // Basename of the process owning hwnd (e.g. L"StartMenuExperienceHost.exe"), or empty.
+    std::wstring ProcessBaseName(HWND hwnd)
+    {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (!pid) return {};
+        HANDLE proc = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+        if (!proc) return {};
+        wchar_t path[MAX_PATH] = {};
+        DWORD len = MAX_PATH;
+        const bool ok = QueryFullProcessImageNameW(proc, 0, path, &len);
+        CloseHandle(proc);
+        if (!ok) return {};
+        const wchar_t* file = wcsrchr(path, L'\\');
+        return file ? file + 1 : path;
     }
 }
 
@@ -152,6 +174,7 @@ bool DockWindow::Create(HINSTANCE instance)
     {
         m_taskbarOverlay->RequestMeasure();
         SetTimer(hwnd, kOverlayTimer, kOverlayMs, nullptr);  // backstop: guarantees a 2nd verdict if the 1st post is lost
+        SetTimer(hwnd, kSafetyTimer, kSafetyMs, nullptr);    // periodic self-heal (see kSafetyTimer)
         // Re-measure when the task list resizes. Scope to explorer's PID so we only
         // wake on taskbar layout changes, not every window move system-wide.
         DWORD explorerPid = 0;
@@ -206,6 +229,45 @@ int DockWindow::ButtonAt(POINT ptClient) const
          Renderer::ButtonLayout(rc, GetDpiForWindow(m_hwnd), DockButtons()))
         if (PtInRect(&h.rect, ptClient)) return h.index;
     return -1;
+}
+
+// A fullscreen app fills rcMonitor (a merely-maximized window stops at rcWork, above
+// the taskbar) on the same monitor as the dock. ±2px tolerance for scaled displays.
+bool DockWindow::FullscreenOnDockMonitor(HWND fg) const
+{
+    if (!fg || fg == GetDesktopWindow() || fg == GetShellWindow()) return false;
+    RECT r;
+    if (!GetWindowRect(fg, &r)) return false;
+    HMONITOR dockMon = MonitorFromWindow(m_hwnd, MONITOR_DEFAULTTONEAREST);
+    if (MonitorFromWindow(fg, MONITOR_DEFAULTTONEAREST) != dockMon) return false;
+    MONITORINFO mi = { sizeof(mi) };
+    if (!GetMonitorInfo(dockMon, &mi)) return false;
+    // ±2px: DWM stretch of a DPI-unaware fullscreen app can round up to 2px off an
+    // edge at fractional scaling (175%); a maximized window still differs by ≥ the
+    // resize border + taskbar height, so no false positive.
+    auto within2 = [](LONG a, LONG b) { return (a > b ? a - b : b - a) <= 2; };
+    const RECT& m = mi.rcMonitor;
+    return within2(r.left, m.left) && within2(r.top, m.top) &&
+           within2(r.right, m.right) && within2(r.bottom, m.bottom);
+}
+
+// Start/Search flyouts use DWM cloaking, not move/hide, so closing one emits no taskbar
+// LOCATIONCHANGE — a measure-driven overlay would stay stuck hidden. Drive suppression
+// off the foreground window (flyout process) + the fullscreen state instead, and kick a
+// delayed re-measure on release so the taskbar animation has settled first.
+void DockWindow::UpdateOverlaySuppression()
+{
+    if (!m_taskbarOverlay) return;
+    const HWND fg = GetForegroundWindow();
+    const std::wstring proc = ProcessBaseName(fg);
+    const bool flyoutOpen = (_wcsicmp(proc.c_str(), L"StartMenuExperienceHost.exe") == 0 ||
+                             _wcsicmp(proc.c_str(), L"SearchHost.exe") == 0);
+    const bool suppress = flyoutOpen || FullscreenOnDockMonitor(fg);
+    if (suppress == m_overlaySuppressed) return;
+    m_overlaySuppressed = suppress;
+    m_taskbarOverlay->SetSuppressed(suppress);
+    if (!suppress)
+        SetTimer(m_hwnd, kOverlayTimer, kOverlayMs, nullptr);
 }
 
 void DockWindow::ClearHover()
@@ -416,6 +478,9 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
             SetWindowPos(hwnd, lparam ? HWND_BOTTOM : HWND_TOPMOST,
                          0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            // The overlay is a separate topmost window, so ABN doesn't reach it; re-derive
+            // its suppression from live geometry (no latch — a missed exit can't stick).
+            UpdateOverlaySuppression();
         }
         return 0;
 
@@ -438,6 +503,7 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         if (wparam)
         {
             KillTimer(hwnd, kOverlayTimer);  // don't let a queued tick Update() into a dying explorer
+            KillTimer(hwnd, kSafetyTimer);
             AppBarRemove(hwnd);
             PostQuitMessage(0);
         }
@@ -466,6 +532,7 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         {
             if (m_store.Has(target) && m_tabReader)
                 m_tabReader->RequestSnapshot(target);
+            UpdateOverlaySuppression();  // Start/Search flyout or fullscreen app → hide gap pills
             return 0;
         }
 
@@ -533,6 +600,16 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         {
             KillTimer(hwnd, kOverlayTimer);  // one-shot debounce
             if (m_taskbarOverlay) m_taskbarOverlay->RequestMeasure();
+        }
+        else if (wparam == kSafetyTimer)  // periodic; NOT killed here
+        {
+            // Self-heal missed events. Suppressed: re-derive (recovers a missed flyout/
+            // fullscreen release — the only steady-state OpenProcess cost). Not hosting:
+            // re-measure (recovers a stuck-hidden transient). While hosting-and-healthy
+            // do nothing — LOCATIONCHANGE already tracks the gap; a periodic re-measure
+            // would just repaint the overlay every tick for nothing.
+            if (m_overlaySuppressed) UpdateOverlaySuppression();
+            else if (m_taskbarOverlay && !m_gapActive) m_taskbarOverlay->RequestMeasure();
         }
         return 0;
 
@@ -706,6 +783,7 @@ LRESULT DockWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         KillTimer(hwnd, kSnapshotTimer);
         KillTimer(hwnd, kConfigTimer);
         KillTimer(hwnd, kOverlayTimer);
+        KillTimer(hwnd, kSafetyTimer);
         if (m_winEventHookLocation)   { UnhookWinEvent(m_winEventHookLocation);   m_winEventHookLocation   = nullptr; }
         if (m_winEventHookForeground) { UnhookWinEvent(m_winEventHookForeground); m_winEventHookForeground = nullptr; }
         if (m_winEventHookNameChange) { UnhookWinEvent(m_winEventHookNameChange); m_winEventHookNameChange = nullptr; }
