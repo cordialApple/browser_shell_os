@@ -56,7 +56,8 @@ namespace Renderer
         const Theme& t = ActiveTheme();
         FillRoundedThemed(hdc, rc, t.pillTop, t.pillBottom, t.pillBorder, t.gradient, dpiI);
 
-        HFONT font = MakeFont(8, FW_MEDIUM, dpiI);
+        const int ptSize = (rc.bottom - rc.top) <= ScalePx(20, dpiI) ? 7 : 8;
+        HFONT font = MakeFont(ptSize, FW_MEDIUM, dpiI);
         HGDIOBJ of = SelectObject(hdc, font);
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, t.pillText);
@@ -92,22 +93,19 @@ namespace Renderer
     {
         GapLayout out;
 
-        const int dpiI = dpi ? static_cast<int>(dpi) : 96;
-        const int edge = ScalePx(4, dpiI);    // dead-zone: never cover the taskbar edges
-        const int gap  = ScalePx(6, dpiI);
+        const int dpiI  = dpi ? static_cast<int>(dpi) : 96;
+        const int edge  = ScalePx(4, dpiI);
+        const int gap   = ScalePx(6, dpiI);
         const int chipMax = ScalePx(160, dpiI);
         const int chipMin = ScalePx(60, dpiI);
-        const int rowH = rc.bottom - rc.top;
-        const int h    = (std::min)(ScalePx(28, dpiI), rowH - 2 * edge);
-        if (h < 1) return out;
-
+        const int rowH  = rc.bottom - rc.top;
+        const int innerH = rowH - 2 * edge;
         const int left  = rc.left + edge;
         const int right = rc.right - edge;
-        const int top   = rc.top + (rowH - h) / 2;
         const int avail = right - left;
         if (avail <= 0) return out;
 
-        // Chips: minimized windows only, in stable insertion order.
+        // Collect minimized windows in stable insertion order.
         std::vector<HWND> wins;
         const auto& all = store.All();
         for (HWND hwnd : store.Ordered())
@@ -115,35 +113,57 @@ namespace Renderer
             auto it = all.find(hwnd);
             if (it != all.end() && it->second.minimized) wins.push_back(hwnd);
         }
-
-        int x = left;
         const int nWin = static_cast<int>(wins.size());
+
+        const bool twoRow = (nWin > 0 && !buttons.empty());
+
+        int pillTop, pillH, chipTop, chipH;
+        if (twoRow)
+        {
+            const int vgap = ScalePx(2, dpiI);
+            pillH = ScalePx(14, dpiI);
+            chipH = (std::min)(ScalePx(24, dpiI), innerH - pillH - vgap);
+            const int stackH = pillH + vgap + chipH;
+            pillTop = rc.top + (rowH - stackH) / 2;
+            chipTop = pillTop + pillH + vgap;
+        }
+        else
+        {
+            const int h = (std::min)(ScalePx(28, dpiI), innerH);
+            if (h < 1) return out;
+            pillH = chipH = h;
+            pillTop = chipTop = rc.top + (rowH - h) / 2;
+        }
+
+        // Chips span the full width in two-row mode; leftover-fill in single-row mode.
+        int x = left;
         int k = 0;
         if (nWin > 0)
         {
-            int maxK = (avail + gap) / (chipMin + gap);   // how many fit at the floor width
+            int maxK = (avail + gap) / (chipMin + gap);
             if (maxK < 0) maxK = 0;
-            k = (std::min)(nWin, maxK);                    // overflow drops newest (tail)
+            k = (std::min)(nWin, maxK);
         }
         if (k > 0)
         {
-            int chipW = (avail - (k - 1) * gap) / k;       // spread across the row...
-            if (chipW > chipMax) chipW = chipMax;          // ...but cap so pills keep room
+            int chipW = (avail - (k - 1) * gap) / k;
+            if (chipW > chipMax) chipW = chipMax;
             out.chips.reserve(k);
             for (int i = 0; i < k; ++i)
             {
-                out.chips.push_back({ { x, top, x + chipW, top + h }, wins[i] });
+                out.chips.push_back({ { x, chipTop, x + chipW, chipTop + chipH }, wins[i] });
                 x += chipW + gap;
             }
         }
 
-        // Pills fill the leftover to the right of the chips; drop first when tight.
+        // Pills: own row (full avail) in two-row mode; leftover after chips in single-row.
         const int pillW = ScalePx(71, dpiI);
+        int px = twoRow ? left : x;
         for (int i = 0; i < static_cast<int>(buttons.size()); ++i)
         {
-            if (x + pillW > right) break;
-            out.buttons.push_back({ { x, top, x + pillW, top + h }, i });
-            x += pillW + gap;
+            if (px + pillW > right) break;
+            out.buttons.push_back({ { px, pillTop, px + pillW, pillTop + pillH }, i });
+            px += pillW + gap;
         }
         return out;
     }
