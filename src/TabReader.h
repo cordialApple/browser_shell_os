@@ -39,7 +39,11 @@ public:
     void RequestSnapshot(HWND hwnd);
     // Restore+foreground must already be in flight on the UI thread; the worker
     // gates on window readiness before touching UIA. Title-first match, index tiebreak.
-    void RequestActivate(HWND hwnd, std::wstring wantedTitle, int fallbackIndex);
+    // tClickUs/tRestoreUs are the A/C timestamps from the UI-thread click-to-latency
+    // chain (see Trace.h) — threaded through so the worker can emit one combined
+    // FanActivateLatency event covering the whole click-to-confirm span.
+    void RequestActivate(HWND hwnd, std::wstring wantedTitle, int fallbackIndex,
+                         long long tClickUs, long long tRestoreUs);
 
 private:
     enum class ReqKind { Snapshot, Activate };
@@ -48,6 +52,8 @@ private:
         HWND         hwnd;
         std::wstring wantedTitle;
         int          fallbackIndex = 0;
+        long long    tClickUs      = 0;
+        long long    tRestoreUs    = 0;
     };
 
     void WorkerLoop();

@@ -1,5 +1,6 @@
 #include "FanPopup.h"
 #include "PaintUtil.h"
+#include "Trace.h"
 #include <windowsx.h>
 
 using namespace Paint;
@@ -225,12 +226,17 @@ LRESULT CALLBACK FanPopup::StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPA
             break;
         case WM_LBUTTONDOWN:
         {
+            const long long tClick = trace::NowUs();   // A: trigger detected
             const POINT pt = { GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam) };
             const int idx = self->RowAt(pt);
             if (idx >= 0 && self->m_ownerHwnd && self->m_activateMsg)
-                PostMessageW(self->m_ownerHwnd, self->m_activateMsg,
-                             reinterpret_cast<WPARAM>(self->m_targetHwnd),
-                             static_cast<LPARAM>(idx));
+            {
+                auto* req = new FanActivateRequest{ idx, tClick };
+                if (!PostMessageW(self->m_ownerHwnd, self->m_activateMsg,
+                                  reinterpret_cast<WPARAM>(self->m_targetHwnd),
+                                  reinterpret_cast<LPARAM>(req)))
+                    delete req;
+            }
             return 0;
         }
         }

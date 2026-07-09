@@ -1,6 +1,7 @@
 #include "HostWindow.h"
 #include "WindowMonitor.h"
 #include "PaintUtil.h"
+#include "Trace.h"
 #include <algorithm>
 
 namespace
@@ -603,22 +604,23 @@ LRESULT HostWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
 
     case kFanActivateMsg:
     {
-        // wparam = target browser HWND; lparam = index into that window's Store tab
-        // vector (FanPopup already mapped displayed row → original index). Resolve the
-        // wanted title NOW (pre-restore Store state), then restore+foreground FIRST
-        // (R1: patterns on a background/iconic window are unreliable) and hand the
-        // worker a title to re-match against the post-restore tree.
-        const HWND target   = reinterpret_cast<HWND>(wparam);
-        const int  tabIndex = static_cast<int>(lparam);
+        // wparam = target browser HWND; lparam = FanActivateRequest* (owned here — delete
+        // below). Resolve the wanted title NOW (pre-restore Store state), then
+        // restore+foreground FIRST (R1: patterns on a background/iconic window are
+        // unreliable) and hand the worker a title to re-match against the post-restore tree.
+        const HWND target = reinterpret_cast<HWND>(wparam);
+        std::unique_ptr<FanActivateRequest> req(reinterpret_cast<FanActivateRequest*>(lparam));
         const auto& all = m_store.All();
         auto it = all.find(target);
-        if (it != all.end() && tabIndex >= 0 &&
-            tabIndex < static_cast<int>(it->second.tabs.size()))
+        if (req && it != all.end() && req->tabIndex >= 0 &&
+            req->tabIndex < static_cast<int>(it->second.tabs.size()))
         {
-            std::wstring wanted = it->second.tabs[tabIndex].title;
+            std::wstring wanted = it->second.tabs[req->tabIndex].title;
             RestoreWindow(target);
+            const long long tRestore = trace::NowUs();   // C: restore/show issued
             if (m_tabReader)
-                m_tabReader->RequestActivate(target, std::move(wanted), tabIndex);
+                m_tabReader->RequestActivate(target, std::move(wanted), req->tabIndex,
+                                             req->tClickUs, tRestore);
         }
         if (m_fanPopup) m_fanPopup->Hide();   // close on click (committed; window coming forward is the feedback)
         return 0;

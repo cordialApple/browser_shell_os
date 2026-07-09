@@ -4,6 +4,15 @@
 #include <vector>
 #include "Store.h"
 
+// activateMsg payload: wparam=targetHwnd, lparam=pointer to a heap-allocated
+// FanActivateRequest (owned by the receiver — delete after reading). tClickUs
+// is the trigger timestamp (A) for the click-to-visible-frame latency chain.
+struct FanActivateRequest
+{
+    int       tabIndex;
+    long long tClickUs;
+};
+
 // Transient per-window tab list. A single reusable WS_POPUP window, repositioned
 // and repopulated per hovered anchor (a dock card or a taskbar chip). Grows upward
 // from the anchor's top edge. Never activates, never registers an AppBar. UI thread only.
@@ -15,7 +24,7 @@ public:
     FanPopup(const FanPopup&) = delete;
     FanPopup& operator=(const FanPopup&) = delete;
 
-    // ownerHwnd receives activateMsg (wparam=targetHwnd, lparam=tab index) on a row click.
+    // ownerHwnd receives activateMsg (wparam=targetHwnd, lparam=FanActivateRequest*) on a row click.
     bool Create(HINSTANCE instance, HWND ownerHwnd, UINT activateMsg);
     void Destroy();
 

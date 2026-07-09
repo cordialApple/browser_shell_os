@@ -1,4 +1,5 @@
 #include "TabReader.h"
+#include "Trace.h"
 #include <UIAutomation.h>
 #include <wrl/client.h>
 #include <cwchar>
@@ -35,6 +36,18 @@ static bool CancelableSleep(const std::atomic<bool>& stop, int ms)
     if (stop.load()) return true;
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
     return stop.load();
+}
+
+static const wchar_t* OutcomeName(ActivateOutcome o)
+{
+    switch (o)
+    {
+    case ActivateOutcome::Selected:           return L"Selected";
+    case ActivateOutcome::NoMatch:            return L"NoMatch";
+    case ActivateOutcome::PatternUnavailable: return L"PatternUnavailable";
+    case ActivateOutcome::Failed:             return L"Failed";
+    }
+    return L"Unknown";
 }
 
 static bool EndsWith(const std::wstring& s, const wchar_t* suffix)
@@ -270,12 +283,35 @@ static HRESULT FindLiveTabItems(IUIAutomation* automation, HWND hwnd,
 // tab: title-first match, fallbackIndex only breaks ties among title matches, a
 // bare index never selects alone. Restore is driven by the UI thread; here we only
 // gate on readiness, act, and confirm. matchedIndex.active is set on success.
+//
+// tClickUs/tRestoreUs are the A/C timestamps handed down from the UI thread. Finish()
+// emits ONE combined FanActivateLatency event on every exit path (success or bail),
+// reusing timestamps captured at points this function already visits — no extra
+// sleeps, polls, or COM calls added for telemetry alone. F ("first visible frame")
+// is approximated as the moment IsItemSelected() re-confirms true after the existing
+// settle sleep, not a true paint signal (see session discussion).
 TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
                               const std::wstring& wantedTitle, int fallbackIndex,
-                              const std::atomic<bool>& stop)
+                              const std::atomic<bool>& stop,
+                              long long tClickUs, long long tRestoreUs)
 {
     TabActivateResult r{ hwnd, ActivateOutcome::Failed, -1, {} };
-    if (!automation) return r;
+
+    long long tTabFoundUs = 0, tSelectAttemptUs = 0, tConfirmUs = 0;
+    auto Finish = [&]() -> TabActivateResult
+    {
+        const long long tEndUs = tConfirmUs ? tConfirmUs : trace::NowUs();
+        TRACE_EVENT("FanActivateLatency",
+            TraceLoggingWideString(OutcomeName(r.outcome), "outcome"),
+            TraceLoggingInt64(tRestoreUs - tClickUs, "us_click_to_restore"),
+            TraceLoggingInt64(tTabFoundUs ? tTabFoundUs - tRestoreUs : -1, "us_restore_to_tabfound"),
+            TraceLoggingInt64(tSelectAttemptUs ? tSelectAttemptUs - tTabFoundUs : -1, "us_tabfound_to_select"),
+            TraceLoggingInt64(tConfirmUs ? tConfirmUs - tSelectAttemptUs : -1, "us_select_to_confirm"),
+            TraceLoggingInt64(tEndUs - tClickUs, "duration_us"));
+        return std::move(r);
+    };
+
+    if (!automation) return Finish();
 
     const long long t0 = NowMs();
 
@@ -285,9 +321,9 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     while (IsWindow(hwnd) && NowMs() - t0 < kReadyTimeoutMs)
     {
         if (IsWindowVisible(hwnd) && !IsIconic(hwnd)) { ready = true; break; }
-        if (CancelableSleep(stop, kPollIntervalMs)) return r;
+        if (CancelableSleep(stop, kPollIntervalMs)) return Finish();
     }
-    if (!ready) return r;
+    if (!ready) return Finish();
 
     // Gate 2: tab tree rebuilt (async after restore).
     ComPtr<IUIAutomationElementArray> items;
@@ -297,9 +333,10 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     {
         if (SUCCEEDED(FindLiveTabItems(automation, hwnd, items, tabs)) && items && !tabs.empty())
         { haveTree = true; break; }
-        if (CancelableSleep(stop, kPollIntervalMs)) return r;
+        if (CancelableSleep(stop, kPollIntervalMs)) return Finish();
     }
-    if (!haveTree) return r;
+    if (!haveTree) return Finish();
+    tTabFoundUs = trace::NowUs();   // D: tab tree available to match against
 
     r.freshTabs = tabs;   // carry the re-snapshot back regardless of match outcome
 
@@ -311,7 +348,7 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
             if (idx < 0) idx = i;
             if (i == fallbackIndex) idx = i;
         }
-    if (idx < 0) { r.outcome = ActivateOutcome::NoMatch; return r; }
+    if (idx < 0) { r.outcome = ActivateOutcome::NoMatch; return Finish(); }
 
     auto markSelected = [&] {
         r.matchedIndex = idx;
@@ -321,7 +358,7 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     };
 
     ComPtr<IUIAutomationElement> item;
-    if (FAILED(items->GetElement(idx, &item)) || !item) return r;
+    if (FAILED(items->GetElement(idx, &item)) || !item) return Finish();
 
     // Select via SelectionItemPattern (live pattern — the action runs on the provider).
     ComPtr<IUIAutomationSelectionItemPattern> selPat;
@@ -335,17 +372,19 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
         r.outcome = ActivateOutcome::PatternUnavailable;
         // fall through to the SetFocus/Legacy fallback below
     }
+    tSelectAttemptUs = trace::NowUs();   // E: activation attempted
 
-    if (CancelableSleep(stop, kConfirmSettleMs)) return r;
+    if (CancelableSleep(stop, kConfirmSettleMs)) return Finish();
     if (IsItemSelected(item.Get()))
     {
+        tConfirmUs = trace::NowUs();   // F: activation-confirmed proxy
         markSelected();
-        return r;
+        return Finish();
     }
 
     // Fallback chain (R2): SetFocus → LegacyIAccessible.DoDefaultAction. NOT Invoke.
     item->SetFocus();
-    if (CancelableSleep(stop, kConfirmSettleMs)) return r;
+    if (CancelableSleep(stop, kConfirmSettleMs)) return Finish();
     if (!IsItemSelected(item.Get()))
     {
         ComPtr<IUIAutomationLegacyIAccessiblePattern> legacy;
@@ -353,19 +392,20 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
                                                 IID_PPV_ARGS(&legacy))) && legacy)
         {
             legacy->DoDefaultAction();
-            if (CancelableSleep(stop, kConfirmSettleMs)) return r;
+            if (CancelableSleep(stop, kConfirmSettleMs)) return Finish();
         }
     }
 
     if (IsItemSelected(item.Get()))
     {
+        tConfirmUs = trace::NowUs();   // F: activation-confirmed proxy (fallback path)
         markSelected();
     }
     else if (r.outcome != ActivateOutcome::PatternUnavailable)
     {
         r.outcome = ActivateOutcome::Failed;
     }
-    return r;
+    return Finish();
 }
 
 } // namespace
@@ -425,12 +465,14 @@ void TabReader::RequestSnapshot(HWND hwnd)
     m_cv.notify_one();
 }
 
-void TabReader::RequestActivate(HWND hwnd, std::wstring wantedTitle, int fallbackIndex)
+void TabReader::RequestActivate(HWND hwnd, std::wstring wantedTitle, int fallbackIndex,
+                                long long tClickUs, long long tRestoreUs)
 {
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         if (m_stop) return;
-        m_queue.push_back({ ReqKind::Activate, hwnd, std::move(wantedTitle), fallbackIndex });
+        m_queue.push_back({ ReqKind::Activate, hwnd, std::move(wantedTitle), fallbackIndex,
+                            tClickUs, tRestoreUs });
     }
     m_cv.notify_one();
 }
@@ -474,7 +516,8 @@ void TabReader::WorkerLoop()
                 TabActivateResult result{ req.hwnd, ActivateOutcome::Failed, -1, {} };
                 if (automation)
                     result = ActivateTab(automation.Get(), req.hwnd,
-                                         req.wantedTitle, req.fallbackIndex, m_stop);
+                                         req.wantedTitle, req.fallbackIndex, m_stop,
+                                         req.tClickUs, req.tRestoreUs);
 
                 auto* payload = new TabActivateResult(std::move(result));
                 if (!PostMessageW(m_dockHwnd, m_activateMsg,
