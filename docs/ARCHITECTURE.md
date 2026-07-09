@@ -1,8 +1,11 @@
 # Architecture & Design Spec
 
-Native Windows shell tool: a dock strip above the taskbar that keeps minimized
-browser windows' tab information visible, aggregating multiple windows as
-staggered card stacks.
+Native Windows shell tool: minimized browser windows' tab information shows as
+chips in the taskbar's own empty gap area, aggregating multiple windows as
+staggered card stacks. (Originally shipped as a reserved AppBar dock strip
+above the taskbar — chip-rework Stage 3 replaced that with the taskbar-gap
+overlay described here; §3 below still narrates the original AppBar design as
+history.)
 
 This spec defines the component model, the four iterative stages, the exact
 Win32/UIA APIs each stage rests on, acceptance criteria, and known risks. Each
@@ -16,16 +19,18 @@ on a later stage's polish.
 1. **Minimum functionality per stage.** Every stage produces a demonstrable
    executable. Ship the smallest thing that proves the stage's capability.
 2. **Native and dependency-light.** C++17, Win32 API only. No UI framework, no
-   Electron, no embedded web view. The dock *is* a shell citizen: it registers
-   as an application desktop toolbar (AppBar) and reserves real screen space —
-   something an ordinary always-on-top window cannot do.
-3. **One UI thread.** A single message loop owns the dock window; all Win32 UI
-   calls happen on that thread. Anything that can block (UI Automation tree
-   walks, window enumeration) runs on a worker thread and marshals results back
-   via `PostMessage`.
-4. **Fail visible, exit clean.** The AppBar must always deregister
-   (`ABM_REMOVE`) on every exit path, or Windows keeps the strip reserved as
-   dead space until logoff.
+   Electron, no embedded web view. (Originally the dock registered as an
+   application desktop toolbar (AppBar) to reserve real screen space; chip-
+   rework Stage 3 removed that in favor of a topmost overlay painted into the
+   taskbar's own existing gap — see §3 for the AppBar-era history.)
+3. **One UI thread.** A single message loop owns the hidden coordinator
+   window; all Win32 UI calls happen on that thread. Anything that can block
+   (UI Automation tree walks, window enumeration) runs on a worker thread and
+   marshals results back via `PostMessage`.
+4. **Fail visible, exit clean.** No AppBar is registered today, so there is
+   nothing to deregister (see §3/§6 for the removed AppBar's exit-path
+   obligation, kept as history). Every exit path must still tear down
+   whatever it *did* acquire (hooks, worker threads, timers) cleanly.
 
 ## 2. Component model
 
@@ -34,7 +39,7 @@ noted.
 
 | Component | Stage | Responsibility |
 |---|---|---|
-| `DockWindow` | 1 | The AppBar-registered, always-on-top, borderless window anchored above the taskbar. Owns the message loop. |
+| `HostWindow` (was `DockWindow`; renamed post-chip-rework) | 1 | Originally the AppBar-registered, always-on-top, borderless window anchored above the taskbar; now a never-shown hidden 1x1 coordinator. Owns the message loop. |
 | `WindowMonitor` | 2 | Discovers browser top-level windows and tracks lifecycle (create / destroy / minimize / restore) via `EnumWindows` + `SetWinEventHook`. |
 | `TabReader` | 3 | Reads a browser window's tab titles through UI Automation. Interface is deliberately narrow so a native-messaging implementation can replace it later. |
 | `Store` | 3 | In-memory model: tracked windows and their last-known tabs. Single writer (UI thread); workers post snapshots into it. |
@@ -196,10 +201,11 @@ corresponding window when a card is clicked.
     dock (`WM_MOUSEMOVE`/`TrackMouseEvent` for enter/leave),
   - click → `ShowWindow(hwnd, SW_RESTORE)` + `SetForegroundWindow(hwnd)`, then
     the stack re-settles.
-- Fan overlay taller than the reserved strip: the reserved AppBar band stays
-  slim; the fan renders in a transient pop-up window (`WS_EX_TOPMOST`,
-  layered) that appears above the dock on hover and dismisses on leave — the
-  reserved area itself never grows.
+- Fan overlay taller than the card row: the fan renders in a transient pop-up
+  window (`WS_EX_TOPMOST`, layered) that appears above the hovered card/chip
+  and dismisses on leave — nothing it opens above ever grows to fit it. (At
+  the time this was written that "above" was a reserved AppBar strip; post
+  chip-rework it's the taskbar-gap overlay, same behavior.)
 
 ### Acceptance criteria
 - Minimize three browser windows → three staggered cards, each listing its own
@@ -209,8 +215,8 @@ corresponding window when a card is clicked.
 
 ### Risks
 - Input routing/z-order across overlapping cards (rigorous hit-test rects).
-- Dock overflow with many minimized windows: cap visible cards, spill into a
-  "+N more" affordance rather than growing the reserved strip.
+- Overflow with many minimized windows: cap visible cards, spill into a
+  "+N more" affordance rather than growing the space they're rendered into.
 - Repeated UIA snapshots across many windows: debounce per-window, snapshot
   only on minimize/title-change events, never on a timer.
 
@@ -231,10 +237,13 @@ Buttons persist across sessions via the shell tool's config file.
 
 ### Approach — two sub-phases (minimum functionality first)
 
-**Phase 5a — buttons hosted in the dock strip (safe, ships first).**
-The Stage 1 dock already owns reserved shell real estate; render the pill/icon
-buttons at its right end, next to the card stacks. Zero new shell integration
-risk; proves the button model, config persistence, and actions end to end.
+**Phase 5a — buttons hosted in the dock strip (safe, ships first; superseded
+by chip-rework, see below).** The Stage 1 dock already owned reserved shell
+real estate; render the pill/icon buttons at its right end, next to the card
+stacks. Zero new shell integration risk; proves the button model, config
+persistence, and actions end to end. (This dock-strip hosting was later
+removed entirely — chip-rework Stage 3 killed the AppBar dock, and Phase 5b
+below became the only surface for these buttons.)
 
 **Phase 5b — overlay on the taskbar's empty region (the headline).**
 Windows 11 removed the DeskBand/toolbar extension APIs, so nothing can be
@@ -280,14 +289,17 @@ borderless, topmost overlay window *over* the taskbar's empty region:
 
 ## 8. Cross-cutting concerns
 
-- **Threading model:** UI thread = dock message loop, sole `Store` writer.
-  Worker thread(s) run `EnumWindows` re-validation and UIA snapshots; they
-  communicate exclusively by `PostMessage`-ing owned heap payloads to the dock
-  window. `SetWinEventHook` callbacks do the minimum (validate + post).
-- **DPI / display changes:** per-monitor-v2 awareness set at startup; renegotiate
-  the AppBar rect on `WM_DPICHANGED`, `WM_DISPLAYCHANGE`, and `ABN_POSCHANGED`.
-- **Lifetime hygiene:** `ABM_REMOVE` on every exit path; unhook all WinEvent
-  hooks; `CoUninitialize` after UIA teardown.
+- **Threading model:** UI thread = the hidden coordinator's message loop, sole
+  `Store` writer. Worker thread(s) run `EnumWindows` re-validation and UIA
+  snapshots; they communicate exclusively by `PostMessage`-ing owned heap
+  payloads to that window. `SetWinEventHook` callbacks do the minimum
+  (validate + post).
+- **DPI / display changes:** per-monitor-v2 awareness set at startup. (No
+  AppBar rect to renegotiate anymore — chip-rework Stage 3 removed it; the
+  taskbar-gap overlay instead re-measures on `WM_DPICHANGED`,
+  `WM_DISPLAYCHANGE`, and taskbar-geometry events.)
+- **Lifetime hygiene:** no AppBar to remove today (see §1/§3); unhook all
+  WinEvent hooks; `CoUninitialize` after UIA teardown.
 - **Configuration:** a small config file for which browser processes to track
   and dock appearance. Formalized in Stage 5 (button definitions live there);
   not needed for stages 1–4 minimum functionality.
@@ -304,12 +316,13 @@ replacement is the browsers' official **native messaging** mechanism:
   that forwards tab state to the shell tool over a local pipe — or the shell
   tool itself acts as the host.
 - Integration point: this becomes an alternative implementation behind the
-  `TabReader` interface. `Store`, `Renderer`, `WindowMonitor`, `DockWindow`,
+  `TabReader` interface. `Store`, `Renderer`, `WindowMonitor`, `HostWindow`,
   and `Launcher` are untouched.
 
 Note: **no Electron anywhere in this architecture.** Electron was considered in
-early ideation as a host for a web-based dock UI; with a native C++ AppBar,
-the dock already owns real shell-level screen space, and the native messaging
+early ideation as a host for a web-based dock UI; a native C++ shell tool can
+paint directly into the taskbar's own screen space (originally via an AppBar,
+now via a topmost overlay in the taskbar gap) in a way Electron can't, and the native messaging
 host is a plain executable. Electron would add a Chromium runtime without
 adding capability.
 
@@ -394,7 +407,7 @@ docs/
 CMakeLists.txt              (lands with Stage 1)
 src/
   main.cpp                  entry point, DPI setup, message loop
-  DockWindow.{h,cpp}        Stage 1
+  HostWindow.{h,cpp}        Stage 1 (renamed from DockWindow post-chip-rework)
   Trace.h                   TraceLogging wrapper (profiler workstream, P.1)
   WindowMonitor.{h,cpp}     Stage 2
   TabReader.{h,cpp}         Stage 3 (UIA implementation)

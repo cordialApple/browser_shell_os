@@ -17,12 +17,12 @@ handoff doc tells you exactly what you need for the current task.
 
 ## What this project is
 
-A native **C++17 / Win32** Windows shell tool: an AppBar dock above the
-taskbar that keeps minimized browser windows' tab info visible, later
-aggregating multiple windows as staggered card stacks and adding automation
-buttons in the taskbar's empty space. Five stages plus a decoupled profiler
-workstream, defined in `docs/ARCHITECTURE.md`; step-by-step plans in
-`docs/plans/`.
+A native **C++17 / Win32** Windows shell tool: a hidden coordinator window
+(`HostWindow`) that keeps minimized browser windows' tab info visible as
+chips in the taskbar's own empty gap area, aggregating multiple windows as
+staggered card stacks and adding automation buttons in that same space. Five
+stages plus a decoupled profiler workstream, defined in
+`docs/ARCHITECTURE.md`; step-by-step plans in `docs/plans/`.
 
 ## Hard rules — do not drift
 
@@ -34,10 +34,13 @@ workstream, defined in `docs/ARCHITECTURE.md`; step-by-step plans in
    non-Windows environment: write the code, keep it correct against the
    documented APIs, and state plainly that build/run verification is pending
    on Windows. Never claim runtime verification you didn't do.
-4. **AppBar hygiene is non-negotiable.** Every code path that exits the
-   process must deregister the AppBar (`ABM_REMOVE`). A missed removal leaves
-   dead reserved screen space until explorer restarts. When touching lifetime
-   code, re-check every exit path.
+4. **No AppBar registered; `ABM_GETSTATE` query-only.** Chip-rework Stage 3
+   removed the AppBar dock entirely — the only `SHAppBarMessage` call left in
+   `src/` is a read-only `ABM_GETSTATE` in `TaskbarOverlayWindow::IsAutoHide`.
+   There is nothing to deregister, so this rule is vacuous today. If any
+   future work re-registers an AppBar, the old obligation applies again:
+   every exit path must `ABM_REMOVE`, or Windows leaves dead reserved screen
+   space until explorer restarts.
 5. **One UI thread.** The dock's message loop thread owns all windows and is
    the sole `Store` writer. Blocking work (UIA, enumeration) goes on workers
    that communicate via `PostMessage` only. `SetWinEventHook` callbacks do
