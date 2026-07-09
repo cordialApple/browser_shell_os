@@ -13,7 +13,11 @@ namespace
 // Activation retry budget (R2). Restore is async; Select on a still-iconic or
 // mid-animation window returns S_OK but SILENTLY no-ops. Poll readiness, then the
 // (async-rebuilt) tab tree, then confirm the selection actually took.
-constexpr int kPollIntervalMs  = 50;
+// 15ms (not event-driven — see ActivateTab comment): the worker thread has no
+// message pump, so a WinEventHook here can't fire; that fix needs a UI-thread
+// hook + a new signal path, deferred. Cheap interim win: tighter poll ceiling
+// caps Gate 1/2 worst-case added latency at 15ms instead of 50ms.
+constexpr int kPollIntervalMs  = 15;
 constexpr int kReadyTimeoutMs  = 3000;   // window visible && !iconic
 constexpr int kTreeTimeoutMs   = 3000;   // TabControl with TabItems present
 constexpr int kConfirmSettleMs = 60;     // settle before re-reading IsSelected
@@ -173,6 +177,11 @@ static bool IsItemSelected(IUIAutomationElement* item)
 
 // Like SnapshotTabs but KEEPS the live TabItem element array (elements are not
 // durable across restore, so activation must re-walk fresh and act immediately).
+// Names/IsSelected are read from a single FindAllBuildCache round trip (mirrors
+// SnapshotTabs) instead of one GetCurrentName+GetCurrentPropertyValue pair per
+// item — was up to 2N+1 cross-process COM calls on the click-to-activate path,
+// now one. BuildCache only prefetches properties; the returned elements are
+// still live and safe to Select()/SetFocus() afterward.
 // Returns S_OK with a non-empty array + parallel tabs, or E_FAIL if no tab tree yet.
 static HRESULT FindLiveTabItems(IUIAutomation* automation, HWND hwnd,
                                 ComPtr<IUIAutomationElementArray>& outItems,
@@ -183,6 +192,11 @@ static HRESULT FindLiveTabItems(IUIAutomation* automation, HWND hwnd,
 
     ComPtr<IUIAutomationElement> elem;
     if (FAILED(automation->ElementFromHandle(hwnd, &elem)) || !elem) return E_FAIL;
+
+    ComPtr<IUIAutomationCacheRequest> cacheReq;
+    if (FAILED(automation->CreateCacheRequest(&cacheReq))) return E_FAIL;
+    cacheReq->AddProperty(UIA_NamePropertyId);
+    cacheReq->AddProperty(UIA_SelectionItemIsSelectedPropertyId);
 
     VARIANT vt = {};
     vt.vt   = VT_I4;
@@ -210,7 +224,8 @@ static HRESULT FindLiveTabItems(IUIAutomation* automation, HWND hwnd,
         if (IsInsideDocument(automation, tabCtrl.Get())) continue;
 
         ComPtr<IUIAutomationElementArray> items;
-        if (FAILED(tabCtrl->FindAll(TreeScope_Descendants, tabItemCond.Get(), &items)) || !items)
+        if (FAILED(tabCtrl->FindAllBuildCache(TreeScope_Descendants, tabItemCond.Get(),
+                                               cacheReq.Get(), &items)) || !items)
             continue;
 
         int count = 0;
@@ -228,12 +243,16 @@ static HRESULT FindLiveTabItems(IUIAutomation* automation, HWND hwnd,
             if (SUCCEEDED(items->GetElement(i, &item)) && item)
             {
                 BSTR name = nullptr;
-                if (SUCCEEDED(item->get_CurrentName(&name)) && name)
+                if (SUCCEEDED(item->get_CachedName(&name)) && name)
                 {
                     title = CleanTabTitle(name);
                     SysFreeString(name);
                 }
-                active = IsItemSelected(item.Get());
+                VARIANT sel = {};
+                if (SUCCEEDED(item->GetCachedPropertyValue(
+                        UIA_SelectionItemIsSelectedPropertyId, &sel)))
+                    active = (sel.vt == VT_BOOL && sel.boolVal != VARIANT_FALSE);
+                VariantClear(&sel);
             }
             if (active && sawActive) active = false;
             sawActive = sawActive || active;
