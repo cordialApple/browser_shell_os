@@ -41,24 +41,43 @@ performance over ETW.
 visible-but-empty overlay under terminal churn; fullscreen suppression latency OK. Former top priority, now
 closed.**
 
-**Next action: restore-to-tabfound latency instrumentation landed (67e90b4) — `ActivateTab`
-(`src/TabReader.cpp`) now splits the previously-lumped `us_restore_to_tabfound` (452ms avg, ~74–75% of the
-~602ms fan-activate total, per the 2026-07-08 live capture) into `us_gate1_wait`/`gate1_attempts` (window-
-visible wait), `us_gate2_wait`/`gate2_attempts` (UIA tab-tree-walkable wait), and `us_first_walk`/`us_last_walk`
-(duration of the first vs. most recent `FindLiveTabItems` call within gate 2) — all new sibling fields on the
-existing `FanActivateLatency` TraceLogging event, diagnostics only, zero behavior change. Design reviewed by
-Opus twice (root-cause research, then the exact instrumentation plan) before writing code, per user request
-on this specific investigation — both passes plus an inspector + adjudicator round on the actual diff came
-back clean (one cosmetic field-order nit fixed). Both targets build clean. **NEXT STEP: run a fresh live
-`shell_profiler --raw` capture (elevated) with real fan-activate clicks** — the new fields will tell us
-whether the 452ms is (a) one/two genuinely slow UIA walks, (b) many fast-failing retries piling up while
-genuinely not ready (in which case gate2_attempts is high but first/last_walk are both fast), (b-malign) retries
-where the walk itself gets slow only once the tree is mid-rebuild (first_walk fast, last_walk slow), or (c) Gate 1
-(window-visible wait) is secretly a contributor nobody's checked yet. Only after that capture should a fix be
-attempted — do not guess. PowerBI model can be extended the same way as the current one once this data exists.
+**Next action: restore-to-tabfound bottleneck LOCALIZED to a single call — root cause confirmed,
+fix not yet attempted. Full chain this session: instrumented `ActivateTab` (67e90b4) → live capture (19 real
+fan-clicks, elevated `shell_profiler --raw`) → Opus-reviewed analysis. Result, decisively: `gate2_attempts` was
+exactly 1 in all 19 samples (zero retries, ever) and `us_gate2_wait` ≈ `us_first_walk` to within 12µs on a
+~283ms average (78% of the ~541ms total) — the two independently-bracketed timestamps agreeing that tightly
+is the proof. This kills the "retry churn" hypothesis outright: the cost is the wall-clock duration of ONE
+`FindLiveTabItems` call (`TabReader.cpp`), not polling overhead. Gate 1 (window-visible wait) is real but
+secondary (~15% of total, never dominant) and its `us_gate1_wait` field is known-conflated with worker-queue
+dwell time (caveat, not yet split out — deprioritized, see debt below). Data + breakdown visualized in an
+artifact (private, not in the repo — regenerate from `fan_raw.txt`-style capture if lost).
+**NEXT STEP (Opus's explicit recommendation, do not skip): one more narrow instrumentation pass BEFORE any
+fix** — split the ~283ms `FindLiveTabItems` call (`TabReader.cpp`) into its 3 internal cross-process UIA
+operations: `ElementFromHandle` (cheap, expected ~0), `elem->FindAll(TreeScope_Descendants, tabCtrlCond)`
+(walks the WHOLE window subtree incl. the web-content document that gets walked then discarded via
+`IsInsideDocument` — prime suspect), and `tabCtrl->FindAllBuildCache(TreeScope_Descendants, tabItemCond)`
+(bounded, smaller subtree). Add `us_element_from_handle`/`us_findall_tabctrls`/`us_findall_tabitems` fields
+(or similar) to `FanActivateLatency`, same diagnostics-only discipline as the gate1/gate2 pass, capture ~15-20
+more real clicks. **Only after that split should a fix be chosen**: if `FindAll(Descendants)` on the
+TabControl search dominates → try guided descent (`TreeScope_Children` + manual descent toward the known
+"Tab bar" pane) instead of blanket `Descendants` — safe, no caching, stays a pure re-walk, isolated in
+`TabReader.cpp` (rule 6). If instead Chromium's lazy tree-rebuild cost is paid regardless of query scope →
+narrowing won't help; the fallback is perceived-latency (instant "restoring…" UI state) rather than the raw
+number. **Caching the TabControl element across minimize/restore was explicitly rejected as a first move** —
+Opus's conclusion: a stale post-restore UIA element can return silently-wrong data (S_OK, no thrown exception,
+no FAILED(hr)) rather than cleanly erroring, which risks the exact "select the wrong tab silently" bug
+`ActivateTab`'s design was already written to prevent; only worth revisiting if guided descent proves
+insufficient, and only with explicit staleness validation added. PowerBI model can be extended the same way
+once more segment data exists.
 Feature A (pill icon-fallback) is parked, code-complete, on branch `feat/pill-icon-fallback` (69064ee/bfb1d54,
-based off this branch) — not merged, picked up whenever. Also still outstanding from chip-rework Stage 4: tiny
-doc polish (reword CLAUDE.md rule 4 wording, deferred/low-pri) and all Windows visual checks below.**
+based off this branch) — not merged, picked up whenever.
+Tiny doc polish DONE this session (ef2f51c): CLAUDE.md rule 4 + project blurb reworded, ARCHITECTURE.md's
+stale current-state AppBar/"dock strip" mentions fixed (historical Stage 1 narrative section left as-is,
+deliberately — that's changelog, not live spec). All Windows visual checks below still pending.
+Debt: simplifier pass attempted twice on the gate1/gate2 instrumentation diff (`ActivateTab`,
+`activatetab-complexity` debt) — both attempts hit a transient "529 Overloaded" API error before doing any
+work (0 tool calls). Not yet successfully run; retry in a future session, low priority (diagnostics-only diff,
+already adjudicator-clean).
 **Meanwhile (non-Windows sessions, can't runtime-verify the above): profiler P.1 workstream progressed —
 see 2026-07-08 session log entry. Remaining P.1 sites (`WinEventCallback`, `UiaSnapshot`, `StoreUpdate`,
 `LauncherAction`) are one-liners, fair game for a non-Windows session same as this one.**
@@ -162,7 +181,7 @@ still needs adding to PATH.
 
 ## Key invariants (details in CLAUDE.md — these are the expensive ones)
 
-- `ABM_REMOVE` on EVERY exit path, or dead screen space is leaked.
+- No AppBar registered today (chip-rework removed it); `ABM_REMOVE` on every exit path only applies if one is ever re-registered.
 - One UI thread; workers talk via `PostMessage` only.
 - Win32 only; no frameworks; no third-party deps without approval.
 - Profiler is separate software; shell telemetry is ETW TraceLogging only.
@@ -176,6 +195,36 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-08 — Restore-to-tabfound root cause LOCALIZED (no code changed this entry — analysis only,
+  continuing the same-day instrumentation work below). Live capture: 19 real fan-clicks, elevated
+  `shell_profiler --raw` redirected to a file (`--csv`'s MetricsView can't show per-event fields, only
+  aggregates `duration_us` — learned this the hard way mid-session after wrongly suggesting `--csv` first;
+  `--raw > file.txt` is what actually exposes the new gate1/gate2/walk fields per click). Capture file was
+  UTF-16LE (Windows console redirect) — plain `grep`/`awk` silently matched zero lines until piped through
+  `iconv -f UTF-16LE -t UTF-8` first; the dedicated Grep tool handled the encoding fine on its own. Computed
+  stats across all 19 `outcome=Selected` samples: `gate2_attempts` exactly 1 in 100% of rows (0 ever needed a
+  retry), `us_gate2_wait` (283ms avg) matches `us_first_walk` (283ms avg) to within 12µs — proving the gate-2
+  wait time IS a single `FindLiveTabItems` call's duration, not retry overhead. `us_gate1_wait` avg 80ms/15%,
+  `us_gate2_wait` avg 283ms/78% of the ~541ms total. Sent full data + interpretation to Opus for the fix-
+  direction call (per user's explicit "check with opus often" ask on this investigation): Opus independently
+  re-derived the same conclusion via the us_gate2_wait≈us_first_walk cross-check, ruled out survivorship bias
+  (gate2_attempts increments unconditionally before the walk, so a retried case cannot misreport as 1), flagged
+  one honest caveat (this batch is all-success, so "no retries" is proven only for the happy path, not for
+  failure/retry cases we haven't sampled), and gave a decisive recommendation: do NOT attempt a fix yet — run
+  ONE more instrumentation pass splitting `FindLiveTabItems`'s 3 internal UIA calls (`ElementFromHandle`,
+  `FindAll(Descendants)` for TabControls — prime suspect, walks the whole window incl. the web-content
+  document that then gets discarded via `IsInsideDocument` — and `FindAllBuildCache(Descendants)` for
+  TabItems) before choosing between guided-descent (if the TabControl search dominates) or accepting it as
+  inherent Chromium lazy-rebuild cost and switching to perceived-latency UI instead. Opus also explicitly
+  rejected caching the TabControl UIA element across minimize/restore as unsafe to attempt first: a stale
+  post-restore element can return silently-wrong data (S_OK, not a catchable exception or FAILED(hr)),
+  risking exactly the "select the wrong tab silently" failure mode `ActivateTab`'s existing design already
+  guards against — only revisit if guided descent proves insufficient, and only with explicit staleness
+  validation added. Built an HTML artifact visualizing the 19-click breakdown (stacked composition bar +
+  per-click table) — private, not committed to the repo. Two simplifier-agent attempts on the earlier
+  instrumentation diff both hit a transient "529 Overloaded" server error (0 tool calls each) — not yet
+  successfully run, logged as debt above. Next session: implement the 3-way `FindLiveTabItems` split per
+  Opus's recommendation, capture again, then and only then pick a fix.
 - 2026-07-08 — Restore-to-tabfound latency instrumentation (commit 67e90b4). User flagged this as
   high-stakes ("check with opus often, we can't get this wrong"), so every decision point went through an
   Opus pass before code: (1) Opus (win32-scout) research on whether the 452ms/74–75% `us_restore_to_tabfound`
