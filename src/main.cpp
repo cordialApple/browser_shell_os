@@ -2,10 +2,19 @@
 
 #include "HostWindow.h"
 #include "WindowMonitor.h"
+#include "Trace.h"
 
 namespace
 {
     constexpr wchar_t kMutexName[] = L"BrowserShellOs_SingleInstance";
+
+    // RAII so every wWinMain return path unregisters the provider — same hygiene
+    // reasoning as AppBar rule 4, just for the trace session instead of screen space.
+    struct TraceGuard
+    {
+        TraceGuard()  { trace::Register(); }
+        ~TraceGuard() { trace::Unregister(); }
+    };
 }
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR lpCmdLine, int)
@@ -37,6 +46,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR lpCmdLine, int)
         if (mutex) CloseHandle(mutex);
         return 0;
     }
+
+    const TraceGuard traceGuard;
 
     // Must be FIRST, before any window/USER32 UI call. Cannot set later.
     if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))

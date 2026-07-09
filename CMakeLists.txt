@@ -16,6 +16,7 @@ add_executable(browser_shell_os WIN32
     src/Launcher.cpp
     src/ConfigWatcher.cpp
     src/TaskbarOverlayWindow.cpp
+    src/Trace.cpp
 )
 # Pin SDK target: Win10 RS3+. Need >= RS2 for DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2.
 target_compile_options(browser_shell_os PRIVATE /utf-8)
