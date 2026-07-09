@@ -41,53 +41,54 @@ performance over ETW.
 visible-but-empty overlay under terminal churn; fullscreen suppression latency OK. Former top priority, now
 closed.**
 
-**Next action: guided-descent fix LANDED (this session) — needs a live Windows capture to confirm it actually
-helps.** Full chain this session: the cold-provider warm-up probe (previous entry) got its own 23-click
-capture; `us_element_from_handle` collapsed 101.3ms→12.3ms as predicted, but the probe itself cost ~151ms
-serially (no way to overlap it — `ActivateTab` runs on one worker thread with no sub-threading, so a warm-up
-call can only ever move cost around or add it, never recoup wall-clock; total `duration_us` went UP
-574.6ms→635.3ms). Sent this back to Opus: **decisive recommendation — abandon warm-up, remove the probe,
-switch to guided descent**, because the real signal in that same data was `tabctrl_candidates` (2.17→3.74)
-and `us_findall_tabctrls` (178.6ms→257.6ms) rising together — `FindAll(Descendants)` scales with how much
-UIA tree exists, which is exactly what guided descent targets, vs. materialization's ~150ms fixed floor
-which can't be eliminated. User confirmed via AskUserQuestion; warm-up probe removed (`us_warmup_touch` field
-gone). Implemented guided descent in `FindLiveTabItems` (`TabReader.cpp`): new `FindTabControlsGuided`
-recurses `TreeScope_Children` (not blanket `TreeScope_Descendants`) and prunes any Document-role subtree —
-browser chrome is never inside a Document, web content always is, so this structurally skips walking the
-current tab's (potentially huge, DOM-backed) web-content accessibility tree, which the old blanket search had
-to walk and then discard via `IsInsideDocument` anyway. Falls back to the original blanket search in the same
-call whenever guided descent finds zero candidates. New `guided_descent_used` field on `FanActivateLatency`
-(append-only) distinguishes which path ran in a live capture. **Two real safety issues surfaced by a
-correctness-focused inspector pass (beyond the standard threading lens — added because this is genuinely
-"never silently select the wrong tab" territory) and were fixed before commit, not just noted:** (1) unbounded
-breadth — a depth cap alone doesn't bound a wide sibling fan-out, so added `kGuidedDescentMaxNodes = 500`
-alongside the depth cap; (2) silent truncation — the walk's early-outs didn't signal the caller, so a
-non-empty-but-incomplete candidate list (real tab strip in a truncated branch) could have been trusted instead
-of triggering the fallback — fixed via a `GuidedDescentState{visited, truncated}` threaded through the
-recursion, with `usedGuided` now requiring `!truncated` too. Re-inspected both lenses after the fix — both
-original findings confirmed resolved. Adjudicator MAY PROCEED (two informational-severity items logged as
-debt below, not blocking: the 500-call worst-case teardown-timing budget, and a pre-existing multi-TabControl
-first-hit-wins ordering risk shared with unchanged `SnapshotTabs` — neither is a regression in kind). Simplifier
-ran clean twice (once on the initial guided-descent diff, once after the safety fixes) — no changes either
-time. Both targets build clean.
-**NEXT STEP: live capture on Windows** (same method — elevated `shell_profiler --raw > file.txt`, ~15-20 real
-fan-clicks), read `guided_descent_used` (confirms the fast path is actually being taken, not silently falling
-back every time) and compare `us_findall_tabctrls`/total `duration_us` against this session's two prior
-captures. If guided descent measurably shrinks `us_findall_tabctrls`, this fix is done; if it doesn't (or
-falls back constantly), the guided-descent assumption about browser chrome tree shape needs revisiting — do
-not assume it worked from the code alone. **Caching the TabControl element across minimize/restore stays
-explicitly rejected** — a stale post-restore UIA element can return silently-wrong data (S_OK, no thrown
-exception, no FAILED(hr)), risking the exact "select the wrong tab silently" bug `ActivateTab` already guards
-against; not revisited by this fix. PowerBI model can be extended the same way once more segment data exists.
-Feature A (pill icon-fallback) is parked, code-complete, on branch `feat/pill-icon-fallback` (69064ee/bfb1d54,
-based off this branch) — not merged, picked up whenever.
-Tiny doc polish DONE this session (ef2f51c): CLAUDE.md rule 4 + project blurb reworded, ARCHITECTURE.md's
-stale current-state AppBar/"dock strip" mentions fixed (historical Stage 1 narrative section left as-is,
-deliberately — that's changelog, not live spec). All Windows visual checks below still pending.
-Debt: simplifier pass attempted twice on the gate1/gate2 instrumentation diff (`ActivateTab`,
-`activatetab-complexity` debt) — both attempts hit a transient "529 Overloaded" API error before doing any
-work (0 tool calls). Not yet successfully run; retry in a future session, low priority (diagnostics-only diff,
-already adjudicator-clean).
+**RESOLVED 2026-07-09: guided descent CONFIRMED live on Windows — real win.** 30-click elevated
+`shell_profiler --raw` capture (29 `Selected` + 1 `NoMatch`): `guided_descent_used=1` on every `Selected` row
+(fast path always taken, zero fallback). Avg total `duration_us` **271ms**, down from the 541–570ms pre-fix
+baseline — roughly halved. `us_findall_tabctrls` avg 69.5ms (was 186.5ms); `us_restore_to_tabfound` avg 161ms
+(was 397ms) but still the largest single component (59.2%) — next optimization target if revisited. Debt:
+`activatetab-restore-to-tabfound-bottleneck` updated with these numbers (below); new low-priority
+`activatetab-nomatch-outcome` debt for the 1-in-30 miss (not investigated). **Caching the TabControl element
+across minimize/restore stays explicitly rejected** (stale post-restore UIA element risk). Simplifier debt
+(`activatetab-complexity`, gate1/gate2 diff) still not successfully run — two prior attempts hit transient
+"529 Overloaded" errors; low priority.
+
+**Feature A saga, same session — net result: reverted to parked, nothing landed on `feat/azure-theme`.**
+Investigated merging the parked `feat/pill-icon-fallback` branch (two independent Opus reviews, one design-
+verifying + one adversarial: both confirmed a clean git/semantic merge — zero code-file conflicts, only
+`docs/HANDOFF.md` prose). Started the merge (`--no-commit`), user then redirected mid-merge to a NEW spec
+instead of plain Feature A: automation buttons go icon-only the instant any chip is present (deterministic,
+no config flag), and once a 2nd chip appears, one button docks as a badge on the last chip. Aborted the old
+merge; ran 3 sequential Opus passes (design → adversarial critique, which found the design's core trigger
+premise didn't match the code's actual existing `twoRow` layout and would've broken fan-hover → reconciled
+fix) before writing any code. Built via 4-step `Workflow` (checkpoint-gated, inspector+adjudicator per step);
+one real bug surfaced and got fixed mid-build (badge-dock gate was missing a `buttons[0].icon != nullptr`
+check, letting a label-only button dock and render illegible text into the badge square). Committed on a new
+branch `feat/chip-badge-icons` (40c48b3) — **then deleted after user testing**, because the user's actual
+config (`config.txt`: Gmail/GitHub buttons, both `action=url`) can never produce a resolved icon under this
+design (icon extraction only works off a local exe/shortcut file or explicit `iconPath` — a bare web URL has
+nothing local to pull from), so the whole feature was a no-op for their real buttons. Also did `feat/pill-
+icon-fallback`'s own first-ever Windows visual check (build-only sanity, same url-button limitation applies —
+branch left parked as-is, not deleted, not merged). **Lesson applied going forward: check the user's actual
+config/data against a design before building on top of it, not just after.**
+Feature A (pill icon-fallback) is still parked, code-complete but never functionally exercised, on branch
+`feat/pill-icon-fallback` (69064ee/bfb1d54) — not merged.
+
+**Active thread now: folder-fan launcher button.** New idea: a File-Explorer-icon automation button whose
+hover fan lists the immediate subfolders of `C:\Users\randl\Documents\GitHub` (scanned once at
+`Launcher::Load()`, gated to only rescan if the root path changed across a config reload — confirmed
+`ls`'d, contains a mix of ~15 real folders and at least one stray file that must be filtered by directory
+attribute) and whose row-click launches `wt.exe -d "<folder>"`. This reuses/extends the existing
+chip-hover `FanPopup` (documented fragile history — "hover-seam"/"grace timer" bugs) with a second content
+flavor, so went through the same 3-pass Opus design→adversarial→reconciled process before any code: found
+and fixed (still design-only) a real gap where the adversarial pass caught that button-hover was never
+actually wired into `WM_NCHITTEST` at all in the first draft, and that pills/chips share the same X range in
+two-row mode (separated only vertically) so a straight vertical mouse flick between them crosses without a
+`WM_MOUSELEAVE`, which the first draft's "disjoint rects, no coordination needed" assumption would have
+raced. Final design: chip- and button-hover resolve from one atomic cursor read, funnel into one
+`HostWindow::UpdateFanTarget()` that re-`Show`s a single shared `FanPopup` with flavor+target+rows written
+together in one core `Show()` call — no window for stale/mismatched state. **NOT YET IMPLEMENTED** — next
+step is to branch off `feat/azure-theme` (branch first this time, before writing any code, per user
+instruction) and run the same 4-step checkpoint-gated `Workflow` pattern.
 **Meanwhile (non-Windows sessions, can't runtime-verify the above): profiler P.1 workstream progressed —
 see 2026-07-08 session log entry. Remaining P.1 sites (`WinEventCallback`, `UiaSnapshot`, `StoreUpdate`,
 `LauncherAction`) are one-liners, fair game for a non-Windows session same as this one.**
@@ -162,14 +163,21 @@ Deferred debt:
   stopwatch bookkeeping (`tTabFoundUs`/`tSelectAttemptUs`/`tConfirmUs`, `Finish()` lambda) — at the edge of
   rule-6 isolation working against maintainability. Next substantive change to this function should
   consider extracting the gate loop from the telemetry capture.
-- [activatetab-restore-to-tabfound-bottleneck] CONFIRMED with live `FanActivateLatency` data (2026-07-08,
-  7 real clicks, elevated `shell_profiler --raw`): `us_restore_to_tabfound` averages 452ms and is **74% of
-  the 602ms average total** — click→restore (1.3ms) and select→confirm (72ms) are noise by comparison.
-  This is `ActivateTab`'s readiness-gate/tree-gate retry loop (`TabReader.cpp`) waiting for the restored
-  window's UIA tab tree to become walkable again — matches the earlier spike-test note ("~330ms single UIA
-  walk latency, not retries") but the live retry-loop number runs higher, so there's retry overhead on top
-  of the raw walk cost worth isolating. This is the concrete next target for the "tree-walk is the future
-  optimization target" note elsewhere in this file — not a new problem, but now it has numbers instead of a
+- [activatetab-restore-to-tabfound-bottleneck] UPDATED 2026-07-09 post-guided-descent: `us_restore_to_tabfound`
+  dropped from 452ms/74% (2026-07-08, pre-fix) to **161ms/59.2%** (29-click confirm capture) — guided descent
+  shrank it a lot, but it's still the single largest component of the ~271ms total. `us_element_from_handle`
+  (49ms avg, the Chromium lazy-materialization tax noted earlier) is the next-largest unexplained chunk inside
+  it. Not yet re-targeted — revisit only if this latency matters enough to chase further; current number may
+  already be acceptable.
+- [activatetab-nomatch-outcome] NEW 2026-07-09, informational: one `outcome=NoMatch` row out of 30 in the
+  confirm capture (`us_tabfound_to_select`/`us_select_to_confirm` both `-1`, i.e. never attempted). Single
+  occurrence, cause unknown (mis-click vs. a real matching gap) — not investigated this session, revisit only
+  if it recurs or a pattern emerges.
+- [activatetab-restore-to-tabfound-bottleneck-orig] ORIGINAL 2026-07-08 finding, superseded by the entry
+  above but kept for the retry-loop reasoning: this is `ActivateTab`'s readiness-gate/tree-gate retry loop
+  (`TabReader.cpp`) waiting for the restored window's UIA tab tree to become walkable again — matches the
+  earlier spike-test note ("~330ms single UIA walk latency, not retries") but the live retry-loop number ran
+  higher pre-fix, so there was retry overhead on top of the raw walk cost. Not a new problem, but now it has
   vibe. Raw per-click data + a dashboard: `scratchpad` on the machine that ran the capture (not checked into
   the repo — regenerate via `shell_profiler --raw` if needed, see profiler/README.md).
 - [guided-descent-teardown-budget] `FindTabControlsGuided`'s worst case (`kGuidedDescentMaxNodes = 500`) is
@@ -218,6 +226,32 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-09 — Guided descent CONFIRMED live (30-click capture, 271ms avg vs 541-570ms baseline,
+  `guided_descent_used=1` on all 29 `Selected` rows) — see RESOLVED block above and updated
+  `activatetab-restore-to-tabfound-bottleneck` debt. Built an HTML artifact visualizing the capture.
+  Then investigated merging parked `feat/pill-icon-fallback` (two Opus reviews confirmed clean git/semantic
+  merge, only doc-prose conflict) — started the merge, user redirected mid-merge to a new spec instead
+  (deterministic icon-only buttons + chip-badge-docking, not plain Feature A). Aborted the old merge (this
+  is what wiped the guided-descent doc paragraph above as collateral — the CODE, commit `89afc68`, was never
+  touched, only an uncommitted doc edit got caught by `git merge --abort`'s working-tree reset; recreated it
+  this session). Ran 3 sequential Opus passes (design → adversarial → reconciled fix) on the new badge-dock
+  spec before writing code — adversarial pass caught the design's trigger logic didn't match the code's real
+  `twoRow` layout and would've broken fan-hover. Built via a 4-step checkpoint-gated `Workflow`; one real bug
+  surfaced mid-build and got fixed (badge-dock gate missing an icon-null guard, would've rendered illegible
+  label text into the badge square). Committed to new branch `feat/chip-badge-icons` (40c48b3) — user tested
+  on real hardware and found it a no-op: their actual `config.txt` buttons (Gmail/GitHub) are `action=url`
+  with no local file to extract an icon from, so neither the icon-only trigger nor the badge dock ever
+  activates for them. Deleted `feat/chip-badge-icons`. Did `feat/pill-icon-fallback`'s own first-ever Windows
+  visual check too (build-only — same url-button limitation applies, left parked/not merged). Lesson: check
+  the user's real config against a design before building on it. Pivoted to a new idea — a folder-fan
+  automation button (hover → fan lists `C:\Users\randl\Documents\GitHub` subfolders, click a row → launches
+  `wt.exe -d "<folder>"`) — again ran design→adversarial→reconciled Opus passes before code (adversarial
+  caught that button-hover was never actually wired into `WM_NCHITTEST` in the first draft, and that pills/
+  chips share the same X range in two-row mode so a vertical mouse flick between them crosses without a
+  `WM_MOUSELEAVE`, which the first draft's hover-independence assumption would have raced). Design finished,
+  reconciled, NOT YET IMPLEMENTED — next session should branch off `feat/azure-theme` first (before any code,
+  per explicit instruction this time) and run the same 4-step `Workflow` pattern. Also: `fan_raw.txt`/
+  `fan_raw_v2.txt` (profiler raw-capture dumps) are still untracked clutter in the repo root, never cleaned up.
 - 2026-07-08 — Warm-up-touch probe's live capture came back, abandoned per Opus, replaced with guided descent
   (landed, awaiting live capture). 23-click warm-up capture: `us_element_from_handle` collapsed 101.3ms→12.3ms
   exactly as the materialization hypothesis predicted, but `us_warmup_touch` itself cost ~151ms and total
