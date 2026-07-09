@@ -34,7 +34,7 @@ performance over ETW.
 | Stage 3 — single-window tabs | ✅ Complete — tabs render per-window on minimize, accepted on Win11 |
 | Stage 4 — multi-window stacks | 🟡 code complete (4.1–4.5 + 4.5a) — §12 row 4 acceptance pending on Windows |
 | Stage 5 — taskbar buttons | ✅ ACCEPTED on Win11 — 5a dock buttons + 5b gap overlay (pills-in-gap, event re-measure, single-host dock fallback); all 5 visual checks pass |
-| Profiler (parallel workstream) | ✅ P.1–P.4 code complete, builds green — all 6 events wired (`Paint`, `FanActivateLatency`, `WinEventCallback`, `UiaSnapshot`, `StoreUpdate`, `LauncherAction`); `AppBarNegotiate` dropped (dead, AppBar gone); §12 row P runtime acceptance pending on Windows (elevated) — see `docs/plans/profiler.md` |
+| Profiler (parallel workstream) | 🟡 core loop RUNTIME-VERIFIED on Windows 2026-07-08 — elevated `shell_profiler --raw`/`--csv` both ran live against the shell, all 6 events fired and decoded correctly (`Paint`, `FanActivateLatency`, `WinEventCallback`, `UiaSnapshot`, `StoreUpdate`, `LauncherAction`); `AppBarNegotiate` dropped (dead, AppBar gone). §12 row P NOT fully closed — the kill-profiler/delete-binary decoupling-proof sub-checks weren't exercised this session — see `docs/plans/profiler.md` |
 | Deployment — permanent run ("service" goal) | ⬜ v1 (logon autostart) after Stage 1; v2 (watchdog service) after Stage 5 — see `ARCHITECTURE.md` §13 |
 
 **RESOLVED 2026-07-08 (user-confirmed on Windows): overlay-instability fix holds — no AV crash, no stuck
@@ -121,6 +121,16 @@ Deferred debt:
   stopwatch bookkeeping (`tTabFoundUs`/`tSelectAttemptUs`/`tConfirmUs`, `Finish()` lambda) — at the edge of
   rule-6 isolation working against maintainability. Next substantive change to this function should
   consider extracting the gate loop from the telemetry capture.
+- [activatetab-restore-to-tabfound-bottleneck] CONFIRMED with live `FanActivateLatency` data (2026-07-08,
+  7 real clicks, elevated `shell_profiler --raw`): `us_restore_to_tabfound` averages 452ms and is **74% of
+  the 602ms average total** — click→restore (1.3ms) and select→confirm (72ms) are noise by comparison.
+  This is `ActivateTab`'s readiness-gate/tree-gate retry loop (`TabReader.cpp`) waiting for the restored
+  window's UIA tab tree to become walkable again — matches the earlier spike-test note ("~330ms single UIA
+  walk latency, not retries") but the live retry-loop number runs higher, so there's retry overhead on top
+  of the raw walk cost worth isolating. This is the concrete next target for the "tree-walk is the future
+  optimization target" note elsewhere in this file — not a new problem, but now it has numbers instead of a
+  vibe. Raw per-click data + a dashboard: `scratchpad` on the machine that ran the capture (not checked into
+  the repo — regenerate via `shell_profiler --raw` if needed, see profiler/README.md).
 
 **Build note (this machine):** VS2022 Pro's C++ install now works — the
 canonical CLAUDE.md commands (`cmake -B build -G "Visual Studio 17 2022"`,
@@ -154,6 +164,26 @@ one line to the session log. Keep this file short — prune, don't accumulate.
 
 ## Session log (append one line per work session)
 
+- 2026-07-08 — First live profiler run + root-cause find for the fan-activate lag. Ran
+  `browser_shell_os.exe` + elevated `shell_profiler.exe --csv`/`--raw` together on Windows (first time the
+  two have run together — P.2–P.4 were "builds green" only before this). All 6 events fired and decoded;
+  `--csv` MetricsView confirmed `FanActivateLatency` `duration_us` ~600ms average, matching the long-known
+  "perceivable lag" baseline. `--csv` can't split `FanActivateLatency`'s sub-fields though (MetricsView only
+  aggregates the single `duration_us` field per event) — switched to `--raw` for 7 real fan-clicks and got
+  the actual segment breakdown: `us_click_to_restore` 1.3ms, **`us_restore_to_tabfound` 452ms (74% of the
+  602ms total)**, `us_tabfound_to_select` 77ms, `us_select_to_confirm` 72ms. Root cause is now numbers, not
+  a guess — see the new `activatetab-restore-to-tabfound-bottleneck` debt entry above; this is the concrete
+  target the old "tree-walk is the future optimization target" note was gesturing at. Built a dashboard
+  artifact of the breakdown (stacked-bar per click + table) and two CSVs (wide + long) for the user to pull
+  into PowerBI, which was already open on their machine. No official PowerBI MCP server was connected;
+  registered Microsoft's local `powerbi-modeling-mcp` (user scope, via `claude mcp add`) after confirming
+  via its docs that it only authors/edits an *existing* semantic model (tables/measures/DAX) — it can't
+  create a dataset from a CSV or build report-canvas visuals, so the real division of labor is: user does
+  Get Data → CSV in Desktop (already done, imported the long CSV), MCP tools (once the session restarts —
+  a server added mid-session doesn't appear in this session's tool index) can shape the model from there
+  (rename/type columns, add measures) but won't draw the chart. No shell code touched this session — pure
+  profiling + tooling. Nothing committed to the repo from the live-capture data itself (lives in the
+  session's scratchpad on the machine that ran it, regenerable via `shell_profiler.exe --raw`).
 - 2026-07-08 — User confirmed on Windows: overlay-instability fix (2026-07-05) holds — no AV crash, no
   stuck visible-but-empty overlay under terminal churn, fullscreen suppression latency OK. Former TOP
   PRIORITY closed. Then finished profiler P.1 (non-Windows session): wired the four remaining call sites.
