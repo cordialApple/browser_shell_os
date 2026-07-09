@@ -1,6 +1,7 @@
 #include "TaskbarOverlayWindow.h"
 #include "PaintUtil.h"
 #include "Renderer.h"
+#include "Trace.h"
 #include <shellapi.h>
 #include <windowsx.h>
 #include <UIAutomation.h>
@@ -612,6 +613,8 @@ LRESULT CALLBACK TaskbarOverlayWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM
 
 void TaskbarOverlayWindow::Paint(HDC hdc)
 {
+    const long long tStartUs = trace::NowUs();
+
     RECT rc;
     GetClientRect(m_hwnd, &rc);
     const int w = rc.right - rc.left;
@@ -650,4 +653,9 @@ void TaskbarOverlayWindow::Paint(HDC hdc)
     SelectObject(mem, oldBmp);
     DeleteObject(bmp);
     DeleteDC(mem);
+
+    TRACE_EVENT("Paint",
+        TraceLoggingInt64(trace::NowUs() - tStartUs, "duration_us"),
+        TraceLoggingInt32(w, "dirty_w"),
+        TraceLoggingInt32(h, "dirty_h"));
 }
