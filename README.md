@@ -21,11 +21,9 @@ sites and shortcuts you use often.
   <em>Hover a chip to fan out a window's tabs, click to restore, launch a project into a terminal, and watch minimized windows aggregate, all in the taskbar's empty gap.</em>
 </p>
 
-The same taskbar gap doubles as a quick launcher.
-
 <p align="center">
-  <img src="docs/media/gap-pills.gif" alt="Gmail, GitHub, and Projects launcher pills docked in the taskbar gap" width="100%"><br>
-  <em>One-click launcher pills for the sites and shortcuts you use, docked in the same taskbar gap.</em>
+  <img src="docs/media/gap-pills.gif" alt="Clicking the Gmail, GitHub, and Projects launcher pills to open sites and a project" width="100%"><br>
+  <em>Launcher pills open your sites and projects in one click, straight from the taskbar gap.</em>
 </p>
 
 ## Why
