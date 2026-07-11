@@ -1,9 +1,9 @@
 # Peekbar
 
-Built a Windows-native browser workspace runtime that exposes persistent
-browser state through taskbar-integrated controls, enabling low-latency
-context switching and automation workflows, with event-driven telemetry and
-performance instrumentation over Windows tracing APIs.
+Designed an OS-integrated browser state management layer that exposes
+persistent browser state through taskbar-integrated controls, enabling
+low-latency context switching and automation workflows, with event-driven
+telemetry and performance instrumentation over Windows tracing APIs.
 
 Minimizing a browser window normally collapses it into a flat taskbar button,
 and everything you were looking at disappears. `Peekbar` adds a
