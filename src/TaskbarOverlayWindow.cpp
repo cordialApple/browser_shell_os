@@ -640,7 +640,13 @@ LRESULT CALLBACK TaskbarOverlayWindow::StaticWndProc(HWND hwnd, UINT msg, WPARAM
             return 0;
         case WM_MOUSELEAVE:
             self->m_mouseTracking = false;
+            // Reset BOTH dedupe fields: NCHITTEST can't fire once the cursor is over the
+            // fan (a separate HWND), so a straight pill→fan move never re-derives fanButton
+            // = -1 on its own. Leaving m_hoverButton stuck at idx deduped the next re-hover
+            // of the SAME pill to a no-op — fan silently wouldn't reopen. Chips already got
+            // this reset; buttons didn't when the FolderFan hover path was bolted on.
             self->UpdateHover(nullptr);   // left the overlay → fan graces (may cross into it)
+            self->UpdateButtonHover(-1);
             return 0;
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE;
