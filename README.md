@@ -12,14 +12,16 @@ windows leave their tabs behind as hoverable chips. Multiple minimized
 windows stack up as staggered cards, plus one-click launcher buttons for
 sites and shortcuts you use often.
 
+> **Status:** working on Windows 11. Core dock, multi-window tab tracking,
+> and taskbar launcher buttons are implemented and accepted end-to-end.
+> Actively developed.
+
 <p align="center">
   <img src="docs/media/hero.gif" alt="Peekbar demo: hover a chip to fan out a window's tabs, click to restore, launch projects, and aggregate minimized windows in the taskbar gap" width="100%"><br>
   <em>Hover a chip to fan out a window's tabs, click to restore, launch a project into a terminal, and watch minimized windows aggregate, all in the taskbar's empty gap.</em>
 </p>
 
-> **Status:** working on Windows 11. Core dock, multi-window tab tracking,
-> and taskbar launcher buttons are implemented and accepted end-to-end.
-> Actively developed.
+The same taskbar gap doubles as a quick launcher.
 
 <p align="center">
   <img src="docs/media/gap-pills.gif" alt="Gmail, GitHub, and Projects launcher pills docked in the taskbar gap" width="100%"><br>
