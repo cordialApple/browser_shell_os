@@ -3,7 +3,7 @@
 // ETW contract with the shell — the ONLY coupling between the two programs (hard rule 8).
 // Duplicated here independently; no shell header included. Source of truth: docs/ARCHITECTURE.md §10.
 //
-// Provider name: BrowserShellOs.Perf
+// Provider name: Peekbar.Perf
 // GUID is DERIVED from this name at runtime (TraceLogging/EventSource convention, see
 // ProviderGuidFromName in EtwSession.cpp) so a hardcoded GUID never drifts from the name.
 //
@@ -37,7 +37,7 @@
 
 namespace contract {
 
-inline constexpr wchar_t kProviderName[] = L"BrowserShellOs.Perf";
+inline constexpr wchar_t kProviderName[] = L"Peekbar.Perf";
 
 // Field name the profiler treats as a latency measurement to aggregate.
 inline constexpr wchar_t kDurationField[] = L"duration_us";

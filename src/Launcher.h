@@ -59,7 +59,7 @@ public:
     // safe to call from any thread (the host runs this on a worker, never on the UI thread).
     static std::vector<std::wstring> ScanImmediateSubfolders(const std::wstring& root);
 
-    static std::wstring ConfigDir();       // %LOCALAPPDATA%\browser_shell_os
+    static std::wstring ConfigDir();       // %LOCALAPPDATA%\Peekbar
     static std::wstring ConfigFileName();  // config.txt
     static std::wstring ConfigPath();      // ConfigDir()\ConfigFileName()
 

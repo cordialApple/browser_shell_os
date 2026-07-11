@@ -8,7 +8,7 @@
 
 namespace
 {
-    constexpr wchar_t kClassName[]      = L"BrowserShellOsHostWindow";
+    constexpr wchar_t kClassName[]      = L"PeekbarHostWindow";
     constexpr UINT    kWindowEventMsg   = WM_APP + 2;
     constexpr UINT    kTabSnapshotMsg   = WM_APP + 3;
     constexpr UINT    kConfigChangedMsg = WM_APP + 4;
@@ -125,7 +125,7 @@ bool HostWindow::Create(HINSTANCE instance)
     const HWND hwnd = CreateWindowExW(
         WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE,
         kClassName,
-        L"browser_shell_os",
+        L"Peekbar",
         WS_POPUP,
         0, 0, 1, 1,
         nullptr, nullptr, instance,

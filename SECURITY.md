@@ -1,6 +1,6 @@
 # Security & privacy
 
-`browser_shell_os` sits close to sensitive surfaces. It reads your browser
+`Peekbar` sits close to sensitive surfaces. It reads your browser
 windows and draws over the taskbar, so here is exactly what it does and does
 not do.
 

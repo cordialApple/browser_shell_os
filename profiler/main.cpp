@@ -40,8 +40,8 @@ void Usage() {
     wprintf(L"usage: shell_profiler [--raw] [--csv <path>] [--image <exe>] [--provider <name>]\n"
             L"  --raw            print decoded events as they arrive (no metrics table)\n"
             L"  --csv <path>     append one row per interval to <path>\n"
-            L"  --image <exe>    shell image name to sample (default browser_shell_os.exe)\n"
-            L"  --provider <name> ETW provider name (default BrowserShellOs.Perf)\n"
+            L"  --image <exe>    shell image name to sample (default peekbar.exe)\n"
+            L"  --provider <name> ETW provider name (default Peekbar.Perf)\n"
             L"Requires elevation or membership in 'Performance Log Users'.\n");
 }
 
@@ -50,7 +50,7 @@ void Usage() {
 int wmain(int argc, wchar_t** argv) {
     bool raw = false;
     std::wstring csvPath;
-    std::wstring image = L"browser_shell_os.exe";
+    std::wstring image = L"peekbar.exe";
     std::wstring provider = contract::kProviderName;
 
     for (int i = 1; i < argc; ++i) {
@@ -72,7 +72,7 @@ int wmain(int argc, wchar_t** argv) {
     g_stopEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
 
-    EtwSession session(L"BrowserShellOsProfiler", provider);
+    EtwSession session(L"PeekbarProfiler", provider);
     wprintf(L"consuming provider '%s'\n", provider.c_str());
     PrintGuid(session.ProviderGuid());
 

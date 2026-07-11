@@ -1,10 +1,10 @@
-# browser_shell_os
+# Peekbar
 
 A native Windows shell tool that keeps your browser's tabs visible when you
 minimize the window.
 
 Minimizing a browser window normally collapses it into a flat taskbar button,
-and everything you were looking at disappears. `browser_shell_os` adds a
+and everything you were looking at disappears. `Peekbar` adds a
 **dock strip in the taskbar's own empty gap area**, where minimized browser
 windows leave their tabs behind as hoverable chips. Multiple minimized
 windows stack up as staggered cards, plus one-click launcher buttons for
@@ -45,7 +45,7 @@ with C++ workload) or Build Tools + CMake ≥ 3.20.
 ```
 cmake -B build -G "Visual Studio 17 2022"
 cmake --build build --config Release
-build\Release\browser_shell_os.exe
+build\Release\peekbar.exe
 ```
 
 The tool runs as a hidden coordinator window. It draws its dock strip in the

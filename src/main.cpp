@@ -6,7 +6,7 @@
 
 namespace
 {
-    constexpr wchar_t kMutexName[] = L"BrowserShellOs_SingleInstance";
+    constexpr wchar_t kMutexName[] = L"Peekbar_SingleInstance";
 
     // RAII ensures provider unregisters on every exit path (like AppBar cleanup)
     struct TraceGuard

@@ -1,4 +1,4 @@
-# How browser_shell_os works
+# How Peekbar works
 
 A one-page tour of the design. For the pitch and install steps, start at the
 [README](../README.md).
@@ -76,7 +76,7 @@ Outside its own buttons the overlay is click-through (`WM_NCHITTEST` returns
 a URL, open a pinned site, or run a shortcut or command. Actions use
 `ShellExecuteW` and `CreateProcessW`.
 
-Button definitions live in a JSON config under `%LOCALAPPDATA%\browser_shell_os`,
+Button definitions live in a JSON config under `%LOCALAPPDATA%\Peekbar`,
 loaded at startup and hot-reloaded on change via `ReadDirectoryChangesW`.
 
 ## Design stance
@@ -93,7 +93,7 @@ measuring the taskbar gap, are isolated in `TabReader` and
 ## Observability
 
 The shell instruments itself with ETW TraceLogging under the provider
-`BrowserShellOs.Perf`. When no session is listening, events are discarded at
+`Peekbar.Perf`. When no session is listening, events are discarded at
 near-zero cost, so there are no log files and no telemetry threads.
 
 A separate tool, [`shell_profiler`](../profiler/), consumes those events into a

@@ -17,7 +17,7 @@ using Microsoft::WRL::ComPtr;
 
 namespace
 {
-    constexpr wchar_t kClassName[] = L"BrowserShellOsTaskbarOverlay";
+    constexpr wchar_t kClassName[] = L"PeekbarTaskbarOverlay";
     constexpr UINT     kApplyGapMsg = WM_APP + 1;
     constexpr UINT_PTR kRetryTimer  = 1;    // hysteresis: re-measure once before hiding
     constexpr UINT     kRetryMs      = 300;  // ~one XAML taskbar animation cycle

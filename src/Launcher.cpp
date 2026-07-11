@@ -151,7 +151,7 @@ std::wstring Launcher::ConfigDir()
     if (SUCCEEDED(hr) && local) dir = local;
     CoTaskMemFree(local);  // no-op on null; safe on every path
     if (dir.empty()) return L"";
-    dir += L"\\browser_shell_os";
+    dir += L"\\Peekbar";
     return dir;
 }
 

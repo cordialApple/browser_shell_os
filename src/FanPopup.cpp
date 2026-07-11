@@ -7,7 +7,7 @@ using namespace Paint;
 
 namespace
 {
-    constexpr wchar_t  kClassName[] = L"BrowserShellOsFanPopup";
+    constexpr wchar_t  kClassName[] = L"PeekbarFanPopup";
     constexpr UINT_PTR kGraceTimer  = 1;
     constexpr UINT     kGraceMs     = 150;  // edge-adjacent seam: grace defers close on flick
 }

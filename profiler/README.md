@@ -1,9 +1,9 @@
 # shell_profiler
 
-Standalone ETW consumer that measures `browser_shell_os` performance. Separate
+Standalone ETW consumer that measures `Peekbar` performance. Separate
 executable, separate build target: never bundled with the shell (hard rule 8).
 
-The only coupling is the ETW **provider name** `BrowserShellOs.Perf` and the
+The only coupling is the ETW **provider name** `Peekbar.Perf` and the
 **event/field names**, declared independently in `Contract.h`. No shell source
 or header is included.
 
@@ -45,7 +45,7 @@ cmake --build build-profiler --config Debug
 ## Run
 
 ```
-build\Debug\shell_profiler.exe [--raw] [--csv out.csv] [--image browser_shell_os.exe] [--provider BrowserShellOs.Perf]
+build\Debug\shell_profiler.exe [--raw] [--csv out.csv] [--image peekbar.exe] [--provider Peekbar.Perf]
 ```
 
 - `--raw` prints each decoded event as it arrives instead of the metrics table.
@@ -61,7 +61,7 @@ around). Without it, `StartTraceW`/`EnableTraceEx2` return `ERROR_ACCESS_DENIED`
 
 ## Current status
 
-Builds green; live capture is working. The shell emits `BrowserShellOs.Perf`
+Builds green; live capture is working. The shell emits `Peekbar.Perf`
 events (`src/Trace.h` / `src/Trace.cpp`, wired across the fan / tab-read / store
 paths), and the profiler has decoded them live from the running shell.
 
