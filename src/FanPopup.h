@@ -4,14 +4,10 @@
 #include <vector>
 #include "Store.h"
 
-// Tabs: rows are a minimized window's tabs, targetHwnd = that window (activate a tab
-// on click). Folders: rows are a FolderFan button's subfolder names, targetHwnd unused
-// (launch a folder on click) — the owner resolves which button via its own hover state.
+// FanFlavor: Tabs (minimize window tabs), Folders (FolderFan subfolders). Different activation semantics.
 enum class FanFlavor { Tabs, Folders };
 
-// activateMsg payload: wparam=targetHwnd (Tabs) or 0 (Folders), lparam=pointer to a
-// heap-allocated FanActivateRequest (owned by the receiver — delete after reading).
-// tClickUs is the trigger timestamp (A) for the click-to-visible-frame latency chain.
+// Message payload: wparam=targetHwnd (Tabs) or 0 (Folders), lparam=FanActivateRequest*; receiver owns deallocation.
 struct FanActivateRequest
 {
     FanFlavor flavor;
@@ -19,9 +15,7 @@ struct FanActivateRequest
     long long tClickUs;
 };
 
-// Transient per-window tab list. A single reusable WS_POPUP window, repositioned
-// and repopulated per hovered anchor (a dock card or a taskbar chip). Grows upward
-// from the anchor's top edge. Never activates, never registers an AppBar. UI thread only.
+// Reusable popup window for tabs/folders; grows upward from anchor, never activates. UI thread only.
 class FanPopup
 {
 public:
@@ -34,20 +28,11 @@ public:
     bool Create(HINSTANCE instance, HWND ownerHwnd, UINT activateMsg);
     void Destroy();
 
-    // targetHwnd = the window whose tabs these are (Tabs flavor; echoed back on a row
-    // click), unused for Folders. rows: Tabs flavor = the window's tabs; Folders flavor =
-    // folder names wrapped as Tab{name, false} (no active-row highlight).
-    // Anchor: bottom edge sits at anchorTopScreen, left aligned to anchorLeftScreen,
-    // clamped to the anchor's monitor. Grows upward.
     void Show(FanFlavor flavor, HWND targetHwnd, const std::vector<Tab>& rows,
               int anchorLeftScreen, int anchorRightScreen, int anchorTopScreen, UINT dpi);
     void Hide();
 
-    // Hover-bridge: the fan is a separate window above the strip, so the cursor
-    // crossing the card→fan seam briefly leaves both. BeginGrace (from the dock's
-    // WM_MOUSELEAVE / off-card move) defers the close by a short timer; CancelGrace
-    // (cursor back on the fan or a card) keeps it open. Grace firing = cursor on
-    // neither window → Hide. UI thread only.
+    // Hover-bridge: defers close on card→fan seam crossing (briefly leaves both). CancelGrace re-arms.
     void BeginGrace();
     void CancelGrace();
 
@@ -57,10 +42,7 @@ public:
 private:
     static LRESULT CALLBACK StaticWndProc(HWND, UINT, WPARAM, LPARAM);
     void Paint(HDC hdc);
-    // Displayed-row hit-test in client coords; shares Paint's geometry. Returns the
-    // index into the ORIGINAL tab vector (== displayed row, tabs shown contiguously
-    // from the front), or -1 for outside any clickable row.
-    int  RowAt(POINT ptClient) const;
+    int  RowAt(POINT ptClient) const;  // hit-test in client coords; -1 if outside clickable row
     bool CursorInFan() const;
 
     HWND              m_hwnd        = nullptr;

@@ -8,8 +8,7 @@ namespace
 {
     constexpr wchar_t kMutexName[] = L"BrowserShellOs_SingleInstance";
 
-    // RAII so every wWinMain return path unregisters the provider — same hygiene
-    // reasoning as AppBar rule 4, just for the trace session instead of screen space.
+    // RAII ensures provider unregisters on every exit path (like AppBar cleanup)
     struct TraceGuard
     {
         TraceGuard()  { trace::Register(); }
@@ -20,7 +19,6 @@ namespace
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR lpCmdLine, int)
 {
 #ifdef _DEBUG
-    // Debug scan: run IsBrowserFrame against all top-level windows, print to debugger.
     if (wcsstr(lpCmdLine, L"--scan"))
     {
         const auto frames = ScanBrowserFrames();
@@ -38,8 +36,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR lpCmdLine, int)
     }
 #endif
 
-    // Single instance: second launch exits immediately; two overlays would fight over
-    // the same taskbar gap and paint duplicate chips.
+    // Second launch must exit; two overlays would fight over taskbar gap
     const HANDLE mutex = CreateMutexW(nullptr, FALSE, kMutexName);
     if (!mutex || GetLastError() == ERROR_ALREADY_EXISTS)
     {
@@ -49,7 +46,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR lpCmdLine, int)
 
     const TraceGuard traceGuard;
 
-    // Must be FIRST, before any window/USER32 UI call. Cannot set later.
+    // Order-critical: must be before any window/UI32 call
     if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2))
     {
         CloseHandle(mutex);

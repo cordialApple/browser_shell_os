@@ -16,7 +16,6 @@
 
 namespace {
 
-// SHA-1 of a byte buffer via CNG. Returns 20-byte digest; empty on failure.
 std::vector<BYTE> Sha1(const std::vector<BYTE>& data) {
     std::vector<BYTE> digest;
     BCRYPT_ALG_HANDLE alg = nullptr;
@@ -55,8 +54,7 @@ GUID ProviderGuidFromName(const std::wstring& name) {
     GUID g{};
     if (h.size() < 16)
         return g;
-    h[7] = static_cast<BYTE>((h[7] & 0x0F) | 0x50);  // RFC 4122 version 5
-    // .NET Guid(byte[]) reads Data1/2/3 little-endian; mirror that.
+    h[7] = static_cast<BYTE>((h[7] & 0x0F) | 0x50);  // RFC 4122 v5; Data1/2/3 byte order mirrors .NET Guid(byte[]) little-endian read
     g.Data1 = static_cast<DWORD>(h[0]) | (static_cast<DWORD>(h[1]) << 8) |
               (static_cast<DWORD>(h[2]) << 16) | (static_cast<DWORD>(h[3]) << 24);
     g.Data2 = static_cast<WORD>(h[4] | (h[5] << 8));
@@ -92,7 +90,6 @@ DWORD EtwSession::StartSessionOnce() {
 DWORD EtwSession::Start() {
     DWORD rc = StartSessionOnce();
     if (rc == ERROR_ALREADY_EXISTS) {
-        // A stale session by this name is still up — stop it and retry once.
         std::vector<BYTE> stop(m_props.size(), 0);
         auto* sp = reinterpret_cast<EVENT_TRACE_PROPERTIES*>(stop.data());
         sp->Wnode.BufferSize = static_cast<ULONG>(stop.size());
@@ -138,7 +135,7 @@ void EtwSession::Stop() {
     m_stopped = true;
 
     if (m_traceHandle != INVALID_PROCESSTRACE_HANDLE) {
-        CloseTrace(m_traceHandle);  // unblocks ProcessTrace in real-time mode
+        CloseTrace(m_traceHandle);
         m_traceHandle = INVALID_PROCESSTRACE_HANDLE;
     }
     if (m_consumer.joinable())

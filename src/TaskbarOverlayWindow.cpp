@@ -223,7 +223,7 @@ TaskbarOverlayWindow::Gap TaskbarOverlayWindow::MeasureGap(IUIAutomation* automa
 
     HWND trayNd = FindWindowExW(tray, nullptr, L"TrayNotifyWnd", nullptr);
     RECT rTrayNd = {};
-    if (!trayNd || !GetWindowRect(trayNd, &rTrayNd)) return kInvalid;  // else outline spans the tray
+    if (!trayNd || !GetWindowRect(trayNd, &rTrayNd)) return kInvalid;
     const LONG trayLeft = rTrayNd.left;
 
     const UINT rawDpi = GetDpiForWindow(tray);

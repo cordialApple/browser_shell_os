@@ -16,8 +16,7 @@ namespace
         wchar_t buf[512];
         va_list args;
         va_start(args, fmt);
-        // _TRUNCATE: an unbounded config line must not trip vswprintf's fatal handler.
-        _vsnwprintf_s(buf, _countof(buf), _TRUNCATE, fmt, args);
+        _vsnwprintf_s(buf, _countof(buf), _TRUNCATE, fmt, args);  // _TRUNCATE prevents overflow fatality
         va_end(args);
         OutputDebugStringW(buf);
     }
@@ -36,8 +35,7 @@ namespace
         return s.substr(b, e - b + 1);
     }
 
-    // Read the whole file and decode to UTF-16, honoring a UTF-16LE or UTF-8 BOM;
-    // no BOM is treated as UTF-8 (what Notepad/VS Code save by default).
+    // Decode to UTF-16, honoring UTF-16LE or UTF-8 BOM (no BOM → UTF-8 default)
     bool ReadTextFile(const std::wstring& path, std::wstring& out)
     {
         std::ifstream f(path, std::ios::binary);
@@ -95,10 +93,7 @@ namespace
         return L"unknown";
     }
 
-    // Fire-and-forget: CreateProcessW a command line on a detached MTA worker, tracing the
-    // outcome under `traceAction`. MTA, not STA: this worker runs no message pump, so an STA
-    // (which requires one) could hang a DDE-style shell handler; balance CoUninitialize only
-    // on a successful init (RPC_E_CHANGED_MODE must not be uninitialized).
+    // Fire-and-forget on MTA worker (not STA: no pump prevents DDE-style handler hang); balance CoUninitialize only on successful init
     void RunCommandWorker(std::wstring cmdLine, const wchar_t* traceAction)
     {
         std::thread([cmdLine = std::move(cmdLine), traceAction]() mutable {
@@ -228,10 +223,7 @@ void Launcher::Load()
 
         if (b.action == ButtonAction::FolderFan)
         {
-            // No filesystem access here (rule 5 — Load() runs on the UI thread). A cached
-            // root fills in immediately; an uncached one is queued for the host to scan on
-            // a worker thread and report back via ApplyFolderScan — folderEntries stays
-            // empty (and the button's fan just doesn't open yet) until then.
+            // No filesystem access here (UI thread rule); cached root fills immediately, uncached root queued for worker scan
             auto cached = m_folderFanCache.find(b.target);
             if (cached != m_folderFanCache.end())
             {
@@ -288,9 +280,7 @@ void Launcher::Execute(const Button& b) const
     std::wstring target = b.target;
     std::thread([action, target = std::move(target)]() mutable {
         const long long tStartUs = trace::NowUs();
-        // MTA, not STA: this worker runs no message pump, so an STA (which requires
-        // one) could hang a DDE-style shell handler. Balance CoUninitialize only on
-        // a successful init (RPC_E_CHANGED_MODE must not be uninitialized).
+        // MTA (not STA: no pump prevents DDE-style handler hang); balance CoUninitialize only on successful init
         const HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
         HRESULT actionHr = S_OK;
         switch (action)
@@ -333,8 +323,6 @@ void Launcher::Execute(const Button& b) const
 
 void Launcher::LaunchFolder(const std::wstring& folderPath) const
 {
-    // cmd /k keeps the tab alive once claude exits, dropping back to a normal
-    // prompt still cd'ed into folderPath (cmd, not the default wt profile, so
-    // this doesn't depend on whichever shell the user has set as default).
+    // cmd /k keeps tab alive after claude exits (doesn't depend on user's default shell)
     RunCommandWorker(L"wt.exe -d \"" + folderPath + L"\" cmd /k claude", L"folderfan");
 }

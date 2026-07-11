@@ -11,24 +11,13 @@ using Microsoft::WRL::ComPtr;
 namespace
 {
 
-// Activation retry budget (R2). Restore is async; Select on a still-iconic or
-// mid-animation window returns S_OK but SILENTLY no-ops. Poll readiness, then the
-// (async-rebuilt) tab tree, then confirm the selection actually took.
-// 15ms (not event-driven — see ActivateTab comment): the worker thread has no
-// message pump, so a WinEventHook here can't fire; that fix needs a UI-thread
-// hook + a new signal path, deferred. Cheap interim win: tighter poll ceiling
-// caps Gate 1/2 worst-case added latency at 15ms instead of 50ms.
+// 15ms: worker thread has no message pump for WinEventHook; tighter poll ceiling caps latency at 15ms vs 50ms.
 constexpr int kPollIntervalMs  = 15;
 constexpr int kReadyTimeoutMs  = 3000;   // window visible && !iconic
 constexpr int kTreeTimeoutMs   = 3000;   // TabControl with TabItems present
 constexpr int kConfirmSettleMs = 60;     // settle before re-reading IsSelected
 
-// Backstop against a runaway/cyclic OR pathologically wide tree in
-// FindTabControlsGuided — browser chrome (toolbar, tab strip) is a handful of
-// levels deep and a few dozen nodes wide in practice; this is generous headroom,
-// not a tuned limit. Depth alone doesn't bound cost: a wide, shallow, non-Document
-// sibling fan-out isn't pruned by a depth cap and would otherwise turn one
-// FindLiveTabItems call into unboundedly many cross-process FindAll calls.
+// Depth alone doesn't bound cost: wide sibling fan-out would turn one FindLiveTabItems into unbounded FindAll calls.
 constexpr int kGuidedDescentMaxDepth = 25;
 constexpr int kGuidedDescentMaxNodes = 500;
 
@@ -106,29 +95,14 @@ static bool IsInsideDocument(IUIAutomation* automation, IUIAutomationElement* st
     return false;
 }
 
-// Depth + total-nodes-visited bound, and whether any per-node COM call failed or a
-// bound was hit — see FindTabControlsGuided. A non-empty candidate list from a
-// truncated walk cannot be trusted as complete (the real tab strip could be in the
-// part that was cut off), so the caller must fall back to the blanket search rather
-// than silently proceeding on a partial result.
+// Truncated walk's candidate list cannot be trusted as complete; caller must fall back to blanket search.
 struct GuidedDescentState
 {
     int  visited   = 0;
     bool truncated = false;
 };
 
-// Pruned search for TabControl elements via TreeScope_Children recursion instead of
-// one TreeScope_Descendants FindAll — never descends into a Document subtree (see
-// activatetab-restore-to-tabfound-bottleneck debt: live capture showed the blanket
-// Descendants search dominates FindLiveTabItems's cost and scales with how much is
-// open, almost certainly because it also walks the current tab's DOM-backed
-// web-content accessibility tree just to discard it afterward via IsInsideDocument).
-// Browser chrome is never inside a Document and web content always is, so pruning at
-// the Document boundary while descending is the mirror image of IsInsideDocument's
-// existing ascending check — in the common case this means fewer candidates to
-// re-check, not a replacement for the check: every candidate still goes through the
-// same IsInsideDocument recheck the blanket path always used (see FindLiveTabItems),
-// which is the actual safety backstop, not this function's pruning alone.
+// Pruned recursive descent vs. blanket TreeScope_Descendants FindAll. Prunes at Document boundary but every candidate still rechecked via IsInsideDocument (safety backstop).
 static void FindTabControlsGuided(IUIAutomationElement* node, IUIAutomationCondition* trueCond,
                                    int depth, std::vector<ComPtr<IUIAutomationElement>>& outCandidates,
                                    GuidedDescentState& state)
@@ -154,7 +128,7 @@ static void FindTabControlsGuided(IUIAutomationElement* node, IUIAutomationCondi
 
         CONTROLTYPEID ct = 0;
         if (FAILED(child->get_CurrentControlType(&ct))) { state.truncated = true; continue; }
-        if (ct == UIA_DocumentControlTypeId) continue;   // prune: web content, never the tab strip
+        if (ct == UIA_DocumentControlTypeId) continue;   // web content, skip entire subtree
 
         if (ct == UIA_TabControlTypeId) outCandidates.push_back(child);
 
@@ -196,10 +170,8 @@ std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
         ComPtr<IUIAutomationElement> tabCtrl;
         if (FAILED(tabCtrls->GetElement(ci, &tabCtrl)) || !tabCtrl) continue;
 
-        // Skip web-content tab controls — they live inside a Document node.
         if (IsInsideDocument(automation, tabCtrl.Get())) continue;
 
-        // TabItems are nested inside layout panes, not direct children — use Descendants.
         ComPtr<IUIAutomationElementArray> items;
         if (FAILED(tabCtrl->FindAllBuildCache(TreeScope_Descendants, tabItemCond.Get(),
                                                cacheReq.Get(), &items)) || !items)
@@ -241,8 +213,7 @@ std::vector<Tab> SnapshotTabs(IUIAutomation* automation, HWND hwnd)
     return {};
 }
 
-// Confirm a tab is selected by re-reading IsSelected (Select() returns S_OK even
-// on the silent-no-op failure mode). Worker thread, UIA only.
+// Re-read IsSelected: Select() returns S_OK even on silent-no-op failure.
 static bool IsItemSelected(IUIAutomationElement* item)
 {
     VARIANT v = {};
@@ -253,12 +224,7 @@ static bool IsItemSelected(IUIAutomationElement* item)
     return sel;
 }
 
-// Diagnostic breakdown of one FindLiveTabItems call's internal UIA cost (see
-// activatetab-restore-to-tabfound-bottleneck debt: settles whether the ~283ms
-// gate-2 wait is the TabControl FindAll(Descendants) walk, the per-candidate
-// document-exclusion parent-walk, or the TabItem FindAllBuildCache). The
-// per-candidate fields accumulate across the inner ci loop into one scalar
-// each (1-2 candidates typical) rather than a per-candidate vector.
+// Per-candidate fields accumulate across ci loop into scalars (1-2 candidates typical).
 struct WalkTiming
 {
     long long usElementFromHandle = 0;
@@ -269,14 +235,8 @@ struct WalkTiming
     bool      guidedDescentUsed   = false;
 };
 
-// Like SnapshotTabs but KEEPS the live TabItem element array (elements are not
-// durable across restore, so activation must re-walk fresh and act immediately).
-// Names/IsSelected are read from a single FindAllBuildCache round trip (mirrors
-// SnapshotTabs) instead of one GetCurrentName+GetCurrentPropertyValue pair per
-// item — was up to 2N+1 cross-process COM calls on the click-to-activate path,
-// now one. BuildCache only prefetches properties; the returned elements are
-// still live and safe to Select()/SetFocus() afterward.
-// Returns S_OK with a non-empty array + parallel tabs, or E_FAIL if no tab tree yet.
+// Keeps live TabItem array; elements not durable across restore so activation must re-walk fresh.
+// Single FindAllBuildCache vs. 2N+1 COM calls per item. Returned elements still live for Select/SetFocus.
 static HRESULT FindLiveTabItems(IUIAutomation* automation, HWND hwnd,
                                 ComPtr<IUIAutomationElementArray>& outItems,
                                 std::vector<Tab>& outTabs,
@@ -310,12 +270,7 @@ static HRESULT FindLiveTabItems(IUIAutomation* automation, HWND hwnd,
     if (SUCCEEDED(automation->CreateTrueCondition(&trueCond)) && trueCond)
         FindTabControlsGuided(elem.Get(), trueCond.Get(), 0, guidedCandidates, guidedState);
 
-    // Fallback: guided descent found nothing, OR its walk was truncated (depth/node
-    // cap hit, or any per-node COM call failed) — a truncated walk's candidate list
-    // cannot be trusted as complete even if non-empty, since the real tab strip could
-    // be in the part that got cut off. Falls back to the original blanket search in
-    // this same call, so correctness never regresses versus the pre-guided-descent
-    // code (never silently miss the real tab strip).
+    // Fallback if guided truncated: blanket search so correctness never regresses.
     ComPtr<IUIAutomationElementArray> tabCtrls;
     const bool usedGuided = !guidedCandidates.empty() && !guidedState.truncated;
     int ctrlCount = 0;
@@ -394,17 +349,8 @@ static HRESULT FindLiveTabItems(IUIAutomation* automation, HWND hwnd,
     return E_FAIL;
 }
 
-// Activate a specific tab in an already-restoring window. Never selects a wrong
-// tab: title-first match, fallbackIndex only breaks ties among title matches, a
-// bare index never selects alone. Restore is driven by the UI thread; here we only
-// gate on readiness, act, and confirm. matchedIndex.active is set on success.
-//
-// tClickUs/tRestoreUs are the A/C timestamps handed down from the UI thread. Finish()
-// emits ONE combined FanActivateLatency event on every exit path (success or bail),
-// reusing timestamps captured at points this function already visits — no extra
-// sleeps, polls, or COM calls added for telemetry alone. F ("first visible frame")
-// is approximated as the moment IsItemSelected() re-confirms true after the existing
-// settle sleep, not a true paint signal (see session discussion).
+// Never selects wrong tab: title-first, fallbackIndex breaks ties only.
+// Emits FanActivateLatency on every exit path, reusing existing timestamps.
 TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
                               const std::wstring& wantedTitle, int fallbackIndex,
                               const std::atomic<bool>& stop,
@@ -413,17 +359,9 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     TabActivateResult r{ hwnd, ActivateOutcome::Failed, -1, {} };
 
     long long tTabFoundUs = 0, tSelectAttemptUs = 0, tConfirmUs = 0;
-    // Diagnostic split of us_restore_to_tabfound (see activatetab-restore-to-tabfound-
-    // bottleneck debt): which gate the wait is in, how many polls it took, and whether
-    // the UIA walk itself is slow (vs. many fast-failing polls while genuinely not
-    // ready yet). tFirstWalkUs/tLastWalkUs bracket the SAME call each iteration —
-    // first vs. last tells apart "walk is slow throughout" from "walk is slow only
-    // once the tree is mid-rebuild".
     long long tReadyUs = 0;
     int gate1Attempts = 0, gate2Attempts = 0;
     long long tFirstWalkUs = -1, tLastWalkUs = -1;
-    // Reported from the winning call only (overwritten every gate-2 iteration,
-    // same pattern as tLastWalkUs — the last write before a break IS the winner's).
     WalkTiming lastWalkTiming;
     auto Finish = [&]() -> TabActivateResult
     {
@@ -454,8 +392,6 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
 
     const long long t0 = NowMs();
 
-    // Gate 1: window readiness (restore is async). Bail fast if the window died
-    // between the fan click and here (closed while the request was queued).
     bool ready = false;
     while (IsWindow(hwnd) && NowMs() - t0 < kReadyTimeoutMs)
     {
@@ -466,9 +402,6 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     if (!ready) return Finish();
     tReadyUs = trace::NowUs();
 
-    // Gate 2: tab tree rebuilt (async after restore). Each iteration calls
-    // FindLiveTabItems exactly once, timed, before the success check — so the walk
-    // is never called twice and the sleep-on-failure below is untouched.
     ComPtr<IUIAutomationElementArray> items;
     std::vector<Tab> tabs;
     bool haveTree = false;
@@ -488,9 +421,8 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     if (!haveTree) return Finish();
     tTabFoundUs = trace::NowUs();   // D: tab tree available to match against
 
-    r.freshTabs = tabs;   // carry the re-snapshot back regardless of match outcome
+    r.freshTabs = tabs;
 
-    // Match: title-first, fallbackIndex tiebreak among matches only.
     int idx = -1;
     for (int i = 0; i < static_cast<int>(tabs.size()); ++i)
         if (tabs[i].title == wantedTitle)
@@ -510,7 +442,6 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     ComPtr<IUIAutomationElement> item;
     if (FAILED(items->GetElement(idx, &item)) || !item) return Finish();
 
-    // Select via SelectionItemPattern (live pattern — the action runs on the provider).
     ComPtr<IUIAutomationSelectionItemPattern> selPat;
     if (SUCCEEDED(item->GetCurrentPatternAs(UIA_SelectionItemPatternId, IID_PPV_ARGS(&selPat)))
         && selPat)
@@ -520,7 +451,6 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     else
     {
         r.outcome = ActivateOutcome::PatternUnavailable;
-        // fall through to the SetFocus/Legacy fallback below
     }
     tSelectAttemptUs = trace::NowUs();   // E: activation attempted
 
@@ -532,7 +462,7 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
         return Finish();
     }
 
-    // Fallback chain (R2): SetFocus → LegacyIAccessible.DoDefaultAction. NOT Invoke.
+    // Fallback: SetFocus → LegacyIAccessible.DoDefaultAction (not Invoke).
     item->SetFocus();
     if (CancelableSleep(stop, kConfirmSettleMs)) return Finish();
     if (!IsItemSelected(item.Get()))
@@ -582,15 +512,7 @@ TabReader::~TabReader()
     }
     m_cv.notify_one();
 
-    // m_stop only bounds the sleeps; it cannot interrupt an in-flight cross-process
-    // UIA/COM call into a wedged browser provider — ActivateTab's Select/SetFocus/
-    // DoDefaultAction OR SnapshotTabs/FindLiveTabItems' FindAll (F-02). A plain join()
-    // would then stall WM_DESTROY forever, wedging process teardown. Bounded-join
-    // instead: give an in-flight call a
-    // moment to finish, else detach so teardown proceeds. Detach is shutdown-only: if
-    // the call unhangs while the process is still tearing down (WM_DESTROY → message
-    // loop exit, tens–hundreds of ms), the leaked worker touches freed members — UB,
-    // but unobservable since the process is exiting.
+    // m_stop only bounds sleeps; cannot interrupt wedged UIA/COM calls. Bounded-join: if call hangs after timeout, detach (shutdown-only UB).
     bool exited = false;
     {
         std::unique_lock<std::mutex> lk(m_exit->m);
@@ -609,7 +531,7 @@ void TabReader::RequestSnapshot(HWND hwnd)
         std::lock_guard<std::mutex> lk(m_mutex);
         if (m_stop) return;
         for (const Request& req : m_queue)
-            if (req.kind == ReqKind::Snapshot && req.hwnd == hwnd) return;  // de-dupe snapshots only
+            if (req.kind == ReqKind::Snapshot && req.hwnd == hwnd) return;
         m_queue.push_back({ ReqKind::Snapshot, hwnd, {}, 0 });
     }
     m_cv.notify_one();
@@ -682,7 +604,7 @@ void TabReader::WorkerLoop()
                     delete payload;
             }
         }
-        catch (...) {}  // bad_alloc etc. → skip iteration, continue loop
+        catch (...) {}
     }
 
     CoUninitialize();

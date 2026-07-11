@@ -14,9 +14,7 @@ struct Button {
     std::wstring iconPath;
     ButtonAction action = ButtonAction::Url;
     std::wstring target;
-    // FolderFan only: immediate subfolder names of `target`. Empty until a worker-thread
-    // scan (see Launcher::PendingFolderScans/ApplyFolderScan) completes for this root —
-    // Load() never blocks on the filesystem itself (CLAUDE.md rule 5).
+    // FolderFan only: empty until worker-thread scan completes (Load() never blocks on filesystem)
     std::vector<std::wstring> folderEntries;
 };
 
@@ -31,8 +29,7 @@ public:
     void Load();
     const std::vector<Button>& Buttons() const { return m_buttons; }
 
-    // Theme name from an optional `theme=<name>` config line; empty when unset.
-    // Feed to Paint::SetActiveTheme (empty/unknown falls back to "slate").
+    // From optional `theme=<name>` config line; feed to Paint::SetActiveTheme (unknown → "slate")
     const std::wstring& ThemeName() const { return m_themeName; }
 
     // Fire-and-forget: launches on a detached MTA worker so a slow shell handler
@@ -69,8 +66,7 @@ public:
 private:
     std::vector<Button> m_buttons;
     std::wstring        m_themeName;
-    // FolderFan rescan cache, keyed per root: Load() reuses a cached entry instead of
-    // re-scanning, and only queues an uncached root in m_pendingFolderScans.
+    // FolderFan cache: reuse cached entries, queue uncached roots in m_pendingFolderScans
     std::map<std::wstring, std::vector<std::wstring>> m_folderFanCache;
     std::vector<std::wstring>                         m_pendingFolderScans;
 };

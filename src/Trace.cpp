@@ -2,9 +2,7 @@
 
 #pragma comment(lib, "advapi32.lib")
 
-// GUID pinned to profiler/EtwSession.cpp's ProviderGuidFromName(L"BrowserShellOs.Perf")
-// output — verified against the .NET EventSource reference algorithm (see
-// docs/plans/profiler.md P.2 status). Do not hand-edit without re-deriving both sides.
+// GUID must match profiler/EtwSession.cpp; do not hand-edit without re-deriving both sides
 TRACELOGGING_DEFINE_PROVIDER(
     g_traceProvider,
     "BrowserShellOs.Perf",

@@ -37,11 +37,6 @@ public:
     TabReader& operator=(const TabReader&) = delete;
 
     void RequestSnapshot(HWND hwnd);
-    // Restore+foreground must already be in flight on the UI thread; the worker
-    // gates on window readiness before touching UIA. Title-first match, index tiebreak.
-    // tClickUs/tRestoreUs are the A/C timestamps from the UI-thread click-to-latency
-    // chain (see Trace.h) — threaded through so the worker can emit one combined
-    // FanActivateLatency event covering the whole click-to-confirm span.
     void RequestActivate(HWND hwnd, std::wstring wantedTitle, int fallbackIndex,
                          long long tClickUs, long long tRestoreUs);
 
@@ -58,8 +53,6 @@ private:
 
     void WorkerLoop();
 
-    // Set by the worker when WorkerLoop() returns. shared_ptr so it outlives the
-    // TabReader when a wedged worker is detached at teardown (F-02 bounded join).
     struct ExitSignal {
         std::mutex              m;
         std::condition_variable cv;

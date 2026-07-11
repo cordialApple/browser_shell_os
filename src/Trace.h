@@ -3,9 +3,7 @@
 #include <TraceLoggingProvider.h>
 #include <chrono>
 
-// P.1 (docs/plans/profiler.md): the shell's ONLY coupling to shell_profiler
-// (CLAUDE.md rule 8). Provider name + GUID must match profiler/Contract.h /
-// EtwSession.cpp's ProviderGuidFromName exactly.
+// Provider name + GUID must match profiler/Contract.h and EtwSession.cpp exactly (shell's only profiler coupling)
 TRACELOGGING_DECLARE_PROVIDER(g_traceProvider);
 
 namespace trace
@@ -22,10 +20,7 @@ namespace trace
 
 #define TRACE_EVENT(name, ...) TraceLoggingWrite(g_traceProvider, name, __VA_ARGS__)
 
-// RAII scope timer: on destruction, emits an event named `name` carrying duration_us.
-// TraceLoggingWrite bakes the event name into a static metadata blob, so it must be a
-// literal at the write site — hence the emit lives in a callback the macro instantiates
-// with the literal in hand, not in a class member holding a runtime const char*.
+// Emit callback in macro (not class member) because TraceLoggingWrite requires event name as a literal
 template <class Emit>
 class TraceScope
 {

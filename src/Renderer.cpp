@@ -10,19 +10,13 @@ namespace
 {
     using namespace Paint;
 
-    // Fill a rounded pill: clip to a round region, paint the themed gradient (or a flat
-    // top-color matte), drop the clip, then stroke the rounded border with a NULL_BRUSH
-    // RoundRect so only the pen draws. Restores every selected object and frees the region.
     void FillRoundedThemed(HDC hdc, const RECT& rc, COLORREF top, COLORREF bottom,
                            COLORREF border, bool gradient, int dpiI)
     {
-        // RoundRect's last two args are the corner ELLIPSE diameter (2×radius); clamp
-        // to the pill height so it reads as a rounded end, not a doubled radius.
+        // Clamp corner diameter to height to avoid doubled-radius look
         const int d = (std::min)(ScalePx(6, dpiI), static_cast<int>(rc.bottom - rc.top));
 
-        // Same box for clip + border so the gradient can't reach corner pixels the
-        // RoundRect stroke doesn't enclose. SaveDC/RestoreDC so we restore whatever clip
-        // the caller had rather than blowing away the whole HDC clip with SelectClipRgn(NULL).
+        // SaveDC/RestoreDC to preserve caller's existing clip region
         HRGN rgn = CreateRoundRectRgn(rc.left, rc.top, rc.right, rc.bottom, d, d);
         const int saved = SaveDC(hdc);
         SelectClipRgn(hdc, rgn);
@@ -105,7 +99,6 @@ namespace Renderer
         const int avail = right - left;
         if (avail <= 0) return out;
 
-        // Collect minimized windows in stable insertion order.
         std::vector<HWND> wins;
         const auto& all = store.All();
         for (HWND hwnd : store.Ordered())
@@ -122,9 +115,7 @@ namespace Renderer
         {
             const int vgap = ScalePx(2, dpiI);
             pillH = ScalePx(14, dpiI);
-            // max(1, ...) defensive floor kept even at the original 14px: a short enough
-            // taskbar/DPI combo can still drive innerH-pillH-vgap negative, which would
-            // invert the chip rect and silently make chips unclickable.
+            // Defensive floor: innerH-pillH-vgap can still go negative with short taskbars
             chipH = (std::max)(1, (std::min)(ScalePx(24, dpiI), innerH - pillH - vgap));
             const int stackH = pillH + vgap + chipH;
             pillTop = rc.top + (rowH - stackH) / 2;
@@ -138,7 +129,6 @@ namespace Renderer
             pillTop = chipTop = rc.top + (rowH - h) / 2;
         }
 
-        // Chips span the full width in two-row mode; leftover-fill in single-row mode.
         int x = left;
         int k = 0;
         if (nWin > 0)
@@ -159,13 +149,7 @@ namespace Renderer
             }
         }
 
-        // Pills: own row (full avail) in two-row mode; leftover after chips in single-row.
-        // First-fit-wins by config order means a gap tight enough to drop pills always
-        // drops from the right — the least recently added FolderFan button would be the
-        // first casualty even though it (uniquely) has a fan to lose. A FolderFan button
-        // that doesn't fit evicts the rightmost non-FolderFan pill already placed instead
-        // of being silently dropped; if nothing evictable is placed, it drops like any
-        // other pill (an all-FolderFan or completely-full gap has no room to make).
+        // FolderFan pills evict non-FolderFan pills rather than drop; others drop from right
         const int pillW = ScalePx(71, dpiI);
         int px = twoRow ? left : x;
         for (int i = 0; i < static_cast<int>(buttons.size()); ++i)

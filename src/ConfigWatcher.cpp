@@ -51,15 +51,13 @@ void ConfigWatcher::WorkerLoop()
         pending = true;
 
         if (WaitForMultipleObjects(2, waits, FALSE, INFINITE) != WAIT_OBJECT_0)
-            break;  // stop event signaled (or wait failed) → I/O still pending, drained below
+            break;
 
         DWORD transferred = 0;
-        pending = false;  // wait woke on completion, not the stop event
+        pending = false;
         if (!GetOverlappedResult(hDir, &ov, &transferred, FALSE))
             break;
 
-        // transferred == 0 means the buffer overflowed; treat as a relevant change.
-        // Any-change mode matches every completion outright — no need to parse entries.
         bool matched = anyChange || (transferred == 0);
         for (DWORD offset = 0; !matched && offset < transferred; )
         {
@@ -81,10 +79,7 @@ void ConfigWatcher::WorkerLoop()
         }
     }
 
-    // Drain a still-pending ReadDirectoryChangesW before closing handles: CancelIo is
-    // async, so wait for the cancelled completion to release ov + buf (else the kernel
-    // could signal a closed event / write freed stack). Guard on `pending` — otherwise
-    // GetOverlappedResult(TRUE) would block on an event that will never signal.
+    // Drain pending I/O so kernel doesn't signal/write to stack after close
     if (pending)
     {
         CancelIo(hDir);

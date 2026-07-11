@@ -110,7 +110,7 @@ int wmain(int argc, wchar_t** argv) {
             view.Tick(elapsed);
     }
 
-    session.Stop();  // stops ProcessTrace + tears down the session — never leaked
+    session.Stop();
     wprintf(L"stopped.\n");
     if (g_stopEvent)
         CloseHandle(g_stopEvent);

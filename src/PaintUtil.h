@@ -14,10 +14,6 @@ namespace Paint
     constexpr COLORREF kButtonBg     = RGB(228, 231, 238);  // light pill — pops in the taskbar gap
     constexpr COLORREF kButtonBorder = RGB(120, 124, 132);
 
-    // Skinnable palette for the taskbar-gap pills/chips + fan rows. Each fillable
-    // surface carries a top+bottom gradient pair; gradient==false renders the top
-    // color as a flat matte (bottom is ignored). Isolated here so a re-skin is a
-    // one-struct change with no renderer edits.
     struct Theme
     {
         COLORREF pillTop, pillBottom, pillBorder, pillText;
@@ -30,8 +26,6 @@ namespace Paint
     const Theme& ActiveTheme();
     void         SetActiveTheme(const std::wstring& name);
 
-    // Vertical top→bottom gradient across rc. GradientFill only paints rectangles,
-    // so rounded surfaces must clip to a round region before calling this.
     inline void FillVGradient(HDC hdc, const RECT& rc, COLORREF top, COLORREF bottom)
     {
         TRIVERTEX v[2];
@@ -57,9 +51,6 @@ namespace Paint
         return RGB(up(GetRValue(c)), up(GetGValue(c)), up(GetBValue(c)));
     }
 
-    // Metallic fill: a bright specular edge at the top fading to the base color over the
-    // upper ~40%, then base → shadow over the rest. Reads as lit brushed metal, not a flat
-    // linear wash. rc must already be clipped to the rounded surface by the caller.
     inline void FillMetallic(HDC hdc, const RECT& rc, COLORREF base, COLORREF shadow)
     {
         const int h = rc.bottom - rc.top;
