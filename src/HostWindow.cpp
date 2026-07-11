@@ -713,14 +713,18 @@ LRESULT HostWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         {
 #ifdef _DEBUG
             wchar_t dbg[512];
-            swprintf_s(dbg, L"[TabReader] hwnd=%p tabs=%d failed=%d\n",
+            // _TRUNCATE: a tab title comes straight from a page's UIA Name with no length
+            // cap (TabReader.cpp) — plain swprintf_s asserts/crashes on overflow instead of
+            // truncating, and that assert is modal on this (UI) thread, same class of bug
+            // Launcher.cpp's DebugPrintf already guards against for config lines.
+            _snwprintf_s(dbg, _countof(dbg), _TRUNCATE, L"[TabReader] hwnd=%p tabs=%d failed=%d\n",
                        reinterpret_cast<void*>(payload->hwnd),
                        static_cast<int>(payload->tabs.size()),
                        payload->failed ? 1 : 0);
             OutputDebugStringW(dbg);
             for (const auto& tab : payload->tabs)
             {
-                swprintf_s(dbg, L"  %s\n", tab.title.c_str());
+                _snwprintf_s(dbg, _countof(dbg), _TRUNCATE, L"  %s\n", tab.title.c_str());
                 OutputDebugStringW(dbg);
             }
 #endif
