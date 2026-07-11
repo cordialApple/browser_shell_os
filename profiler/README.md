@@ -1,7 +1,8 @@
 # shell_profiler
 
 Standalone ETW consumer that measures `browser_shell_os` performance. Separate
-executable, separate build target — never bundled with the shell (hard rule 8).
+executable, separate build target: never bundled with the shell (hard rule 8).
+
 The only coupling is the ETW **provider name** `BrowserShellOs.Perf` and the
 **event/field names** in `docs/ARCHITECTURE.md` §10, declared independently in
 `Contract.h`. No shell source or header is included.
@@ -15,6 +16,15 @@ The only coupling is the ETW **provider name** `BrowserShellOs.Perf` and the
 - Live console table per event: count, rate/s, and p50/p95/max of `duration_us`.
 - Samples the shell process alongside: CPU %, working set, handle count.
 - `--csv <path>`: one row per interval for offline analysis.
+
+## From capture to dashboard
+
+The `FanActivateLatency` captures feed a git-diffable Power BI dashboard:
+
+<p align="center">
+  <img src="../docs/dashboard/img/overview-cards.png" width="800" alt="Dashboard KPIs from this profiler's output: average total 530.6 ms, fastest run 271 ms, 55% reduction, 5 runs, top bottleneck restore-to-tab-found"><br>
+  <em>KPI cards built on this profiler's output. Full latency analysis: <a href="../docs/dashboard/">docs/dashboard/</a>.</em>
+</p>
 
 ## Build
 
@@ -39,21 +49,22 @@ build\Debug\shell_profiler.exe [--raw] [--csv out.csv] [--image browser_shell_os
 ```
 
 - `--raw` prints each decoded event as it arrives instead of the metrics table.
-- Ctrl+C stops the session cleanly (`ControlTraceW(EVENT_TRACE_CONTROL_STOP)`) —
+- Ctrl+C stops the session cleanly (`ControlTraceW(EVENT_TRACE_CONTROL_STOP)`);
   the real-time session is never leaked.
 
 ## Privileges
 
 Real-time ETW sessions require **elevation** or membership in the
-**Performance Log Users** group (standard ETW rule — documented, not worked
+**Performance Log Users** group (standard ETW rule, documented, not worked
 around). Without it, `StartTraceW`/`EnableTraceEx2` return `ERROR_ACCESS_DENIED`
 (5) and the profiler reports it and exits.
 
 ## Current status
 
-Builds green. Live capture from the running shell is **pending** because the
-shell does not yet emit `BrowserShellOs.Perf` events — profiler step P.1
-(shell-side `Trace.h` + call sites) is not implemented. Until then the table
-shows "no events yet". The consumer, session lifecycle, TDH decode, metrics,
-and CSV are complete and exercise correctly against any TraceLogging provider
-of that name.
+Builds green; live capture is working. The shell emits `BrowserShellOs.Perf`
+events (`src/Trace.h` / `src/Trace.cpp`, wired across the fan / tab-read / store
+paths), and the profiler has decoded them live from the running shell.
+
+The `FanActivateLatency` captures behind the latency dashboard in
+[`docs/dashboard/`](../docs/dashboard/) are that output. Consumer, session
+lifecycle, TDH decode, metrics, and CSV are all implemented.
