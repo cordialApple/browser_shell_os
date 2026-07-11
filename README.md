@@ -55,8 +55,7 @@ to remove it.
 
 ## Stack
 
-- **C++17 / Win32**: no frameworks, no Electron, no web view, no third-party
-  dependencies.
+- **C++17 / Win32**: 
 - **UI Automation** for reading tab titles (self-contained; no browser
   extension required).
 - Per-monitor DPI aware.
