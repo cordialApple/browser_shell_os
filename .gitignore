@@ -36,3 +36,6 @@ Desktop.ini
 /docs/HANDOFF.md
 /docs/profiler-project-structure.md
 /docs/plans/
+
+# Raw video kept out of the text-first repo
+*.mp4

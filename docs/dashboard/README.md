@@ -38,8 +38,9 @@ the calculated tables, then **Ctrl+S**.
 - **Format:** PBIP, text-only. Model is TMDL (`*.SemanticModel/definition/`), report is PBIR
   (`*.Report/definition/`). No `.pbix` binary blob, so it diffs and merges in git.
 - **Data:** self-contained. Both fact tables are inline `DATATABLE` calculated tables (no external
-  source, no refresh dependency). Figures are the aggregates from the capture runs; the
-  raw per-click dumps were not retained.
+  source, no refresh dependency), so the PBIP stays diffable and does not read the CSV. Figures are
+  the per-run aggregates. One representative raw per-click run (7 clicks, baseline) is kept at
+  `profiler/captures/fan_activate_breakdown_long.csv`; the full 102-click corpus was not retained.
 - **Pages:** Latency Overview · Stage Bottlenecks / Capture Metadata · Run Trends & Guided Descent.
 - **Tables:** `Captures` (per-run), `SubFields` (per-stage), `CaptureMeta` (per-run instrumentation notes).
 - **Theme:** `Logging_shell_real.Report/StaticResources/RegisteredResources/LatencyDark.json` (dark).

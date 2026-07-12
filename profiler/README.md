@@ -19,7 +19,14 @@ or header is included.
 
 ## From capture to dashboard
 
-The `FanActivateLatency` captures feed a git-diffable Power BI dashboard:
+`shell_profiler`'s live console table during a fan-activate session, counts accumulating as tabs restore:
+
+<p align="center">
+  <img src="img/profiler-live.gif" width="820" alt="shell_profiler live console table: FanActivateLatency and other event counts accumulating during a session"><br>
+  <em>Live metrics table (event / count / rate / p50 / p95 / max). Counts climb as fan-activate events fire.</em>
+</p>
+
+A representative raw per-click capture is committed at [`captures/fan_activate_breakdown_long.csv`](captures/fan_activate_breakdown_long.csv) (one baseline run, 7 clicks). The `FanActivateLatency` captures feed a git-diffable Power BI dashboard:
 
 <p align="center">
   <img src="../docs/dashboard/img/overview.png" width="800" alt="Latency Overview dashboard page built on this profiler's output: 530.6 ms average, 271 ms fastest run, 55% reduction over 5 runs, restore-to-tab-found dominant"><br>
