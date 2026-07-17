@@ -34,13 +34,15 @@
 //                       candidates, 0 if it fell back to blanket search.
 //                       FIELD ORDER IS APPEND-ONLY — TDH decodes positionally; never reorder
 //                       or insert ahead of existing fields.)
-//   KeystrokeJumpLatency  outcome, target_index, tab_count, used_direct, us_click_to_restore,
-//                       us_restore_to_ready, us_ready_to_done, duration_us
-//                       (experiment branch exp/keystroke-jump-absolute: pure cache->keystroke,
-//                       ABSOLUTE jump — one Ctrl+digit (Ctrl+1..8 / Ctrl+9=last) lands directly
-//                       on target; tabs past the 8th that aren't last anchor on Ctrl+9 then walk
-//                       back Ctrl+PgUp (used_direct=0). On that branch FanActivateLatency does NOT
-//                       fire for tab clicks. duration_us ends at LAST KEYSTROKE SENT — NOT directly
+//   KeystrokeHopLatency  outcome, active_index, target_index, tab_count, hop_count, used_jump,
+//                       us_click_to_restore, us_restore_to_ready, us_ready_to_done, duration_us
+//                       (experiment branch exp/keystroke-optimal: pure cache->keystroke, OPTIMAL
+//                       ring-hop plan (PlanTabHops in src/TabHop.h). One batched SendInput of the
+//                       minimal key sequence: min over {walk from active, Ctrl+digit anchor + walk}
+//                       on the wrapping tab ring. hop_count = keystrokes in the plan (emitted on
+//                       Selected; on Failed the plan was formed but not sent); used_jump=1 if the
+//                       plan opened with a Ctrl+digit/Ctrl+9 anchor. On this branch FanActivateLatency
+//                       does NOT fire for tab clicks. duration_us ends at KEYS SENT — NOT directly
 //                       comparable to FanActivateLatency.duration_us. No profiler code change.)
 
 namespace contract {

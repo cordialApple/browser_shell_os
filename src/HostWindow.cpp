@@ -738,20 +738,24 @@ LRESULT HostWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         }
         else if (req)
         {
-            // Tabs flavor (exp/keystroke-jump-absolute): pure cache->keystroke, ABSOLUTE jump.
-            // Restore+foreground FIRST, then let the worker send a single Ctrl+digit (Ctrl+1..8 /
-            // Ctrl+9=last) straight to the target tab. No UIA walk/Select, no distance loop.
+            // Tabs flavor (exp/keystroke-optimal): pure cache->keystroke, OPTIMAL ring-hop plan.
+            // Restore+foreground FIRST, then the worker sends one batched SendInput of the minimal
+            // key sequence (PlanTabHops): direct Ctrl+digit, relative walk, or jump+walk. No UIA.
             const auto& all = m_store.All();
             auto it = all.find(target);
             if (it != all.end() && req->rowIndex >= 0 &&
                 req->rowIndex < static_cast<int>(it->second.tabs.size()))
             {
-                const int tabCount = static_cast<int>(it->second.tabs.size());
+                const auto& tabs = it->second.tabs;
+                const int tabCount = static_cast<int>(tabs.size());
+                int activeIndex = -1;   // -1 = no confirmed active tab: planner uses anchored plans only
+                for (int i = 0; i < tabCount; ++i)
+                    if (tabs[i].active) { activeIndex = i; break; }
                 RestoreWindow(target);
                 const long long tRestore = trace::NowUs();   // C: restore/show issued
                 if (m_tabReader)
-                    m_tabReader->RequestKeystrokeJump(target, req->rowIndex, tabCount,
-                                                      req->tClickUs, tRestore);
+                    m_tabReader->RequestKeystrokeHop(target, activeIndex, req->rowIndex, tabCount,
+                                                     req->tClickUs, tRestore);
             }
         }
         if (m_fanPopup) m_fanPopup->Hide();   // Close on click (window/launch is the feedback)

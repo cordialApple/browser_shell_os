@@ -1,4 +1,5 @@
 #include "TabReader.h"
+#include "TabHop.h"
 #include "Trace.h"
 #include <UIAutomation.h>
 #include <wrl/client.h>
@@ -16,7 +17,6 @@ constexpr int kPollIntervalMs  = 15;
 constexpr int kReadyTimeoutMs  = 3000;   // window visible && !iconic
 constexpr int kTreeTimeoutMs   = 3000;   // TabControl with TabItems present
 constexpr int kConfirmSettleMs = 60;     // settle before re-reading IsSelected
-constexpr int kKeyGapMs        = 8;      // gap between taps in the anchored-fallback PgUp run
 
 // Depth alone doesn't bound cost: wide sibling fan-out would turn one FindLiveTabItems into unbounded FindAll calls.
 constexpr int kGuidedDescentMaxDepth = 25;
@@ -489,25 +489,38 @@ TabActivateResult ActivateTab(IUIAutomation* automation, HWND hwnd,
     return Finish();
 }
 
-// Experiment (exp/keystroke-jump-absolute): skip the UIA walk+Select. One Ctrl+digit lands
-// directly on the target — Ctrl+1..8 for tabs 0..7, Ctrl+9 for the last tab. Tabs beyond the 8th
-// that aren't last have no direct key, so anchor on last (Ctrl+9) and walk back Ctrl+PgUp. No
-// cached active index needed; the caller advances the cache to the target on Selected.
-static TabActivateResult KeystrokeJump(HWND hwnd, int targetIndex, int tabCount,
-                                       const std::atomic<bool>& stop,
-                                       long long tClickUs, long long tRestoreUs)
+// Experiment (exp/keystroke-optimal): skip the UIA walk+Select. PlanTabHops returns the minimal
+// ring-hop sequence (direct Ctrl+digit, relative Ctrl+PgUp/PgDn walk, or jump+walk); this maps
+// each Hop to its VK, and KeystrokeHop fires the whole sequence as one batched SendInput.
+static WORD HopVk(const Hop& h)
+{
+    switch (h.kind)
+    {
+    case HopKind::Next:      return VK_NEXT;
+    case HopKind::Prev:      return VK_PRIOR;
+    case HopKind::JumpDigit: return static_cast<WORD>('0' + h.digit);
+    case HopKind::JumpLast:  return '9';
+    }
+    return 0;
+}
+
+static TabActivateResult KeystrokeHop(HWND hwnd, int activeIndex, int targetIndex, int tabCount,
+                                      const std::atomic<bool>& stop,
+                                      long long tClickUs, long long tRestoreUs)
 {
     TabActivateResult r{ hwnd, ActivateOutcome::Failed, -1, {} };
 
     long long tReadyUs = 0, tDoneUs = 0;
-    bool usedDirect = false;
+    int hopCount = 0, usedJump = 0;
     auto Finish = [&]() -> TabActivateResult {
         const long long tEndUs = tDoneUs ? tDoneUs : trace::NowUs();
-        TRACE_EVENT("KeystrokeJumpLatency",
+        TRACE_EVENT("KeystrokeHopLatency",
             TraceLoggingWideString(OutcomeName(r.outcome), "outcome"),
+            TraceLoggingInt32(activeIndex, "active_index"),
             TraceLoggingInt32(targetIndex, "target_index"),
             TraceLoggingInt32(tabCount, "tab_count"),
-            TraceLoggingInt32(usedDirect ? 1 : 0, "used_direct"),
+            TraceLoggingInt32(hopCount, "hop_count"),
+            TraceLoggingInt32(usedJump, "used_jump"),
             TraceLoggingInt64(tRestoreUs - tClickUs, "us_click_to_restore"),
             TraceLoggingInt64(tReadyUs ? tReadyUs - tRestoreUs : -1, "us_restore_to_ready"),
             TraceLoggingInt64((tDoneUs && tReadyUs) ? tDoneUs - tReadyUs : -1, "us_ready_to_done"),
@@ -529,48 +542,35 @@ static TabActivateResult KeystrokeJump(HWND hwnd, int targetIndex, int tabCount,
     r.matchedIndex = targetIndex;
     r.outcome = ActivateOutcome::Selected;   // optimistic: this path never confirms via UIA
 
-    auto chord = [&](WORD vk) {
-        if (GetForegroundWindow() != hwnd) { r.outcome = ActivateOutcome::Failed; return false; }
-        INPUT in[4]{};
-        for (auto& e : in) e.type = INPUT_KEYBOARD;
-        in[0].ki.wVk = VK_CONTROL;
-        in[1].ki.wVk = vk;
-        in[2].ki.wVk = vk; in[2].ki.dwFlags = KEYEVENTF_KEYUP;
-        in[3].ki.wVk = VK_CONTROL; in[3].ki.dwFlags = KEYEVENTF_KEYUP;
-        SendInput(4, in, sizeof(INPUT));
-        return true;
-    };
+    const bool activeKnown = activeIndex >= 0;
+    const std::vector<Hop> hops = PlanTabHops(
+        activeKnown ? activeIndex + 1 : 1, targetIndex + 1, tabCount, activeKnown);
+    hopCount = static_cast<int>(hops.size());
+    if (!hops.empty())
+    {
+        if (GetForegroundWindow() != hwnd) { r.outcome = ActivateOutcome::Failed; return Finish(); }
 
-    if (targetIndex >= 0 && targetIndex <= 7)
-    {
-        usedDirect = true;
-        chord(static_cast<WORD>('1' + targetIndex));   // Ctrl+1..8
-    }
-    else if (targetIndex == tabCount - 1)
-    {
-        usedDirect = true;
-        chord('9');                                    // Ctrl+9 = last tab
-    }
-    else
-    {
-        // Anchor on last (Ctrl+9), then walk back Ctrl+PgUp the remaining distance.
-        if (chord('9'))
+        std::vector<INPUT> seq;
+        seq.reserve(hops.size() * 2 + 2);
+        auto key = [&](WORD vk, DWORD flags) {
+            INPUT e{};
+            e.type = INPUT_KEYBOARD;
+            e.ki.wVk = vk;
+            e.ki.dwFlags = flags;
+            seq.push_back(e);
+        };
+
+        key(VK_CONTROL, 0);
+        for (const Hop& h : hops)
         {
-            const int back = (tabCount - 1) - targetIndex;
-            for (int i = 0; i < back; ++i)
-            {
-                if (CancelableSleep(stop, kKeyGapMs)) break;
-                if (GetForegroundWindow() != hwnd) { r.outcome = ActivateOutcome::Failed; break; }
-                INPUT in[2]{};
-                in[0].type = INPUT_KEYBOARD; in[0].ki.wVk = VK_CONTROL;
-                in[1].type = INPUT_KEYBOARD; in[1].ki.wVk = VK_PRIOR;
-                SendInput(2, in, sizeof(INPUT));
-                INPUT up[2]{};
-                up[0].type = INPUT_KEYBOARD; up[0].ki.wVk = VK_PRIOR; up[0].ki.dwFlags = KEYEVENTF_KEYUP;
-                up[1].type = INPUT_KEYBOARD; up[1].ki.wVk = VK_CONTROL; up[1].ki.dwFlags = KEYEVENTF_KEYUP;
-                SendInput(2, up, sizeof(INPUT));
-            }
+            if (h.kind == HopKind::JumpDigit || h.kind == HopKind::JumpLast) usedJump = 1;
+            const WORD vk = HopVk(h);
+            key(vk, 0);
+            key(vk, KEYEVENTF_KEYUP);
         }
+        key(VK_CONTROL, KEYEVENTF_KEYUP);
+
+        SendInput(static_cast<UINT>(seq.size()), seq.data(), sizeof(INPUT));
     }
 
     tDoneUs = trace::NowUs();
@@ -638,14 +638,14 @@ void TabReader::RequestActivate(HWND hwnd, std::wstring wantedTitle, int fallbac
     m_cv.notify_one();
 }
 
-void TabReader::RequestKeystrokeJump(HWND hwnd, int targetIndex, int tabCount,
-                                     long long tClickUs, long long tRestoreUs)
+void TabReader::RequestKeystrokeHop(HWND hwnd, int activeIndex, int targetIndex, int tabCount,
+                                    long long tClickUs, long long tRestoreUs)
 {
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         if (m_stop) return;
-        Request req{ ReqKind::KeystrokeJump, hwnd, {}, 0, tClickUs, tRestoreUs,
-                     targetIndex, tabCount };
+        Request req{ ReqKind::KeystrokeHop, hwnd, {}, 0, tClickUs, tRestoreUs,
+                     targetIndex, tabCount, activeIndex };
         m_queue.push_back(std::move(req));
     }
     m_cv.notify_one();
@@ -691,12 +691,12 @@ void TabReader::WorkerLoop()
                                   reinterpret_cast<LPARAM>(payload)))
                     delete payload;
             }
-            else  // ReqKind::Activate or ReqKind::KeystrokeJump
+            else  // ReqKind::Activate or ReqKind::KeystrokeHop
             {
                 TabActivateResult result{ req.hwnd, ActivateOutcome::Failed, -1, {} };
-                if (req.kind == ReqKind::KeystrokeJump)
-                    result = KeystrokeJump(req.hwnd, req.targetIndex, req.tabCount,
-                                           m_stop, req.tClickUs, req.tRestoreUs);
+                if (req.kind == ReqKind::KeystrokeHop)
+                    result = KeystrokeHop(req.hwnd, req.activeIndex, req.targetIndex, req.tabCount,
+                                          m_stop, req.tClickUs, req.tRestoreUs);
                 else if (automation)
                     result = ActivateTab(automation.Get(), req.hwnd,
                                          req.wantedTitle, req.fallbackIndex, m_stop,
