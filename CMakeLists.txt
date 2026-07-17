@@ -39,6 +39,8 @@ install(TARGETS peekbar RUNTIME DESTINATION .)
 install(FILES
     packaging/README.txt
     packaging/config.sample.txt
+    packaging/install.ps1
+    packaging/uninstall.ps1
     DESTINATION .
 )
 set(CPACK_GENERATOR "ZIP")
