@@ -5,7 +5,7 @@ A one-page tour of the design. For the pitch and install steps, start at the
 
 The tool is a hidden coordinator process with no visible main window and no
 taskbar icon. It watches browser windows, reads their tabs, and paints chips
-into the taskbar's own empty gap. Everything is native C++17 and Win32, with no
+into the taskbar's own empty gap. Everything is native C++23 and Win32, with no
 frameworks, no Electron, no web view, and no third-party dependencies.
 
 ## Data flow
@@ -56,6 +56,12 @@ Hovering a card opens a fan: a transient topmost layered popup that expands
 upward above the taskbar and dismisses on leave. Clicking a chip restores that
 exact window with `ShowWindow(SW_RESTORE)` and `SetForegroundWindow`.
 
+Clicking a specific tab row restores the window and then activates that tab
+without touching UI Automation: a ring-hop planner computes the shortest
+keystroke path to the target on the wrapping tab ring and the worker sends it as
+one batched `SendInput`. This replaced an earlier UIA walk-and-select and cut
+median activation from 539 ms to ~95 ms.
+
 ## Claiming the taskbar gap
 
 Windows 11 removed the toolbar extension APIs, so nothing can be injected into
@@ -72,12 +78,13 @@ Outside its own buttons the overlay is click-through (`WM_NCHITTEST` returns
 
 ## Launcher buttons
 
-`Launcher` renders pill or icon buttons in the same gap for quick actions: open
-a URL, open a pinned site, or run a shortcut or command. Actions use
-`ShellExecuteW` and `CreateProcessW`.
+`Launcher` renders pill buttons in the same gap for quick actions: open a URL,
+open a pinned site, or run a shortcut or command. Actions use `ShellExecuteW`
+and `CreateProcessW`.
 
-Button definitions live in a JSON config under `%LOCALAPPDATA%\Peekbar`,
-loaded at startup and hot-reloaded on change via `ReadDirectoryChangesW`.
+Button definitions live in a pipe-delimited text config
+(`style|label|action|target`) under `%LOCALAPPDATA%\Peekbar`, loaded at startup
+and hot-reloaded on change via `ReadDirectoryChangesW`.
 
 ## Design stance
 

@@ -4,6 +4,11 @@ Power BI dashboard over the `shell_profiler` `FanActivateLatency` captures.
 Visualizes where the tab-restore latency goes and how it dropped across five
 capture runs (602 ms → 271 ms via guided descent).
 
+> **Historical baseline.** These captures are the UIA walk-and-select era.
+> Activation was later rebuilt as a keystroke ring-hop planner that skips UIA on
+> the hot path (median 539 ms → ~95 ms, event `KeystrokeHopLatency`); this
+> dashboard is kept as the record of the UIA-era optimization work.
+
 > **Why PBIP:** the whole dashboard is checked into version control as text
 > (TMDL model + PBIR report), so its changes review in a pull request like code:
 > no binary `.pbix` blob to diff.

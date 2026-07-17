@@ -26,7 +26,7 @@ or header is included.
   <em>Live metrics table (event / count / rate / p50 / p95 / max). Counts climb as fan-activate events fire.</em>
 </p>
 
-A representative raw per-click capture is committed at [`captures/fan_activate_breakdown_long.csv`](captures/fan_activate_breakdown_long.csv) (one baseline run, 7 clicks). The `FanActivateLatency` captures feed a git-diffable Power BI dashboard:
+A representative raw per-click capture is committed at [`captures/fan_activate_breakdown_long.csv`](captures/fan_activate_breakdown_long.csv) (one baseline run, 7 clicks). These `FanActivateLatency` captures are the pre-ring-hop UIA-walk baseline; they feed a git-diffable Power BI dashboard:
 
 <p align="center">
   <img src="../docs/dashboard/img/overview.png" width="800" alt="Latency Overview dashboard page built on this profiler's output: 530.6 ms average, 271 ms fastest run, 55% reduction over 5 runs, restore-to-tab-found dominant"><br>
@@ -72,6 +72,9 @@ Builds green; live capture is working. The shell emits `Peekbar.Perf`
 events (`src/Trace.h` / `src/Trace.cpp`, wired across the fan / tab-read / store
 paths), and the profiler has decoded them live from the running shell.
 
-The `FanActivateLatency` captures behind the latency dashboard in
-[`docs/dashboard/`](../docs/dashboard/) are that output. Consumer, session
-lifecycle, TDH decode, metrics, and CSV are all implemented.
+The live tab-activation latency event is now `KeystrokeHopLatency` (the ring-hop
+keystroke path that replaced the UIA walk). The `FanActivateLatency` captures
+behind the latency dashboard in [`docs/dashboard/`](../docs/dashboard/) are the
+earlier UIA-era baseline, retained as the historical record of that optimization
+work. Consumer, session lifecycle, TDH decode, metrics, and CSV are all
+implemented.

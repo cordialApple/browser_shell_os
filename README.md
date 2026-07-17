@@ -106,6 +106,13 @@ the work. `restore→tab-found` was the dominant cost. Guided passes took the
 path from 602 ms to 271 ms across 5 capture runs (102 clicks). Details:
 [`docs/dashboard/`](docs/dashboard/) and [`profiler/`](profiler/).
 
+That measurement pointed at the UIA tree-walk itself, so activation was
+ultimately rebuilt to skip UIA on the hot path entirely: a ring-hop planner
+that computes the shortest keystroke sequence to the target tab and sends it as
+one batched `SendInput`. Median tab activation dropped from 539 ms (the UIA
+walk) to ~95 ms — 5.7× — with the injection step collapsing from ~137 ms to
+~20 ms (`KeystrokeHopLatency`).
+
 <p align="center">
   <img src="docs/dashboard/img/stage-bottlenecks.png" width="800" alt="Per-stage latency breakdown: restore-to-tab-found tops at 306.5 ms across 5 capture runs and 102 clicks"><br>
   <em>Per-stage latency breakdown. <code>restore&rarr;tab-found</code> dominates. Full dashboard in <a href="docs/dashboard/">docs/dashboard/</a>.</em>
