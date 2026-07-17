@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <memory>
+#include <cstdint>
 #include "Store.h"
 
 #include <string>
@@ -57,6 +58,7 @@ private:
         int          targetIndex   = 0;
         int          tabCount      = 0;
         int          activeIndex   = 0;
+        uint64_t     gen           = 0;   // hop generation; worker abandons if a newer hop supersedes it
     };
 
     void WorkerLoop();
@@ -78,4 +80,5 @@ private:
     std::atomic<bool>           m_stop{false};
     std::shared_ptr<ExitSignal> m_exit;
     HANDLE                      m_fgReadyEvent = nullptr;   // auto-reset; SetEvent wakes the readiness gate
+    std::atomic<uint64_t>       m_hopGen{0};   // latest keystroke-hop generation; single-flight supersession
 };

@@ -3,6 +3,7 @@
 #include "Trace.h"
 #include <UIAutomation.h>
 #include <wrl/client.h>
+#include <algorithm>
 #include <cwchar>
 #include <string>
 #include <chrono>
@@ -506,6 +507,7 @@ static WORD HopVk(const Hop& h)
 
 static TabActivateResult KeystrokeHop(HWND hwnd, int activeIndex, int targetIndex, int tabCount,
                                       const std::atomic<bool>& stop, HANDLE fgReadyEvent,
+                                      const std::atomic<uint64_t>& latestGen, uint64_t myGen,
                                       long long tClickUs, long long tRestoreUs)
 {
     TabActivateResult r{ hwnd, ActivateOutcome::Failed, -1, {} };
@@ -535,6 +537,9 @@ static TabActivateResult KeystrokeHop(HWND hwnd, int activeIndex, int targetInde
     bool ready = false;
     while (IsWindow(hwnd) && NowMs() - t0 < kReadyTimeoutMs)
     {
+        // A newer click superseded this hop: abandon now instead of stalling the queue on a window
+        // the user already navigated away from (outcome stays Failed => no optimistic cache write).
+        if (latestGen.load(std::memory_order_relaxed) != myGen) return Finish();
         if (IsWindowVisible(hwnd) && !IsIconic(hwnd) && GetForegroundWindow() == hwnd) { ready = true; break; }
         if (stop.load()) return Finish();
         if (fgReadyEvent) WaitForSingleObject(fgReadyEvent, kPollIntervalMs);
@@ -543,17 +548,22 @@ static TabActivateResult KeystrokeHop(HWND hwnd, int activeIndex, int targetInde
     if (!ready) return Finish();
     tReadyUs = trace::NowUs();
 
-    r.matchedIndex = targetIndex;
-    r.outcome = ActivateOutcome::Selected;   // optimistic: this path never confirms via UIA
-
     const bool activeKnown = activeIndex >= 0;
     const std::vector<Hop> hops = PlanTabHops(
         activeKnown ? activeIndex + 1 : 1, targetIndex + 1, tabCount, activeKnown);
     hopCount = static_cast<int>(hops.size());
+
+    // Final gate before committing the optimistic Selected: re-verify the target is still foreground
+    // and this is still the newest hop. Narrows (cannot fully close) the check->SendInput TOCTOU vs
+    // OS-global foreground, and also guards the no-key case (already on target) from a stale write.
+    if (GetForegroundWindow() != hwnd || latestGen.load(std::memory_order_relaxed) != myGen)
+        return Finish();   // outcome stays Failed -> no optimistic cache write
+
+    r.matchedIndex = targetIndex;
+    r.outcome = ActivateOutcome::Selected;   // optimistic: this path never confirms via UIA
+
     if (!hops.empty())
     {
-        if (GetForegroundWindow() != hwnd) { r.outcome = ActivateOutcome::Failed; return Finish(); }
-
         std::vector<INPUT> seq;
         seq.reserve(hops.size() * 2 + 2);
         auto key = [&](WORD vk, DWORD flags) {
@@ -658,11 +668,18 @@ void TabReader::RequestKeystrokeHop(HWND hwnd, int activeIndex, int targetIndex,
     {
         std::lock_guard<std::mutex> lk(m_mutex);
         if (m_stop) return;
+        // Single-flight: a hop is only ever worth the newest click. Drop any queued-but-unstarted
+        // hops and bump the generation so an in-flight one abandons itself (see the readiness gate).
+        m_queue.erase(std::remove_if(m_queue.begin(), m_queue.end(),
+                          [](const Request& r) { return r.kind == ReqKind::KeystrokeHop; }),
+                      m_queue.end());
         Request req{ ReqKind::KeystrokeHop, hwnd, {}, 0, tClickUs, tRestoreUs,
                      targetIndex, tabCount, activeIndex };
+        req.gen = m_hopGen.fetch_add(1, std::memory_order_relaxed) + 1;
         m_queue.push_back(std::move(req));
     }
     m_cv.notify_one();
+    if (m_fgReadyEvent) SetEvent(m_fgReadyEvent);   // wake a parked worker so it re-checks generation now
 }
 
 void TabReader::WorkerLoop()
@@ -710,7 +727,8 @@ void TabReader::WorkerLoop()
                 TabActivateResult result{ req.hwnd, ActivateOutcome::Failed, -1, {} };
                 if (req.kind == ReqKind::KeystrokeHop)
                     result = KeystrokeHop(req.hwnd, req.activeIndex, req.targetIndex, req.tabCount,
-                                          m_stop, m_fgReadyEvent, req.tClickUs, req.tRestoreUs);
+                                          m_stop, m_fgReadyEvent, m_hopGen, req.gen,
+                                          req.tClickUs, req.tRestoreUs);
                 else if (automation)
                     result = ActivateTab(automation.Get(), req.hwnd,
                                          req.wantedTitle, req.fallbackIndex, m_stop,
