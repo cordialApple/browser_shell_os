@@ -1,0 +1,57 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
+  "name": "barStrategy",
+  "position": {
+    "x": 24,
+    "y": 223,
+    "z": 5000,
+    "height": 473,
+    "width": 600,
+    "tabOrder": 6000
+  },
+  "visual": {
+    "visualType": "barChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopStrategies"
+                    }
+                  },
+                  "Property": "Strategy"
+                }
+              },
+              "queryRef": "HopStrategies.Strategy",
+              "nativeQueryRef": "Strategy",
+              "active": true
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopStrategies"
+                    }
+                  },
+                  "Property": "Strategy Median (ms)"
+                }
+              },
+              "queryRef": "HopStrategies.Strategy Median (ms)",
+              "nativeQueryRef": "Strategy Median (ms)"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

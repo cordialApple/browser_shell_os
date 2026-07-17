@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
+  "name": "c1",
+  "position": {
+    "x": 24,
+    "y": 92,
+    "z": 0,
+    "height": 108,
+    "width": 232,
+    "tabOrder": 1000
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopStrategies"
+                    }
+                  },
+                  "Property": "Ring-hop Median (ms)"
+                }
+              },
+              "queryRef": "HopStrategies.Ring-hop Median (ms)",
+              "nativeQueryRef": "Ring-hop Median (ms)"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

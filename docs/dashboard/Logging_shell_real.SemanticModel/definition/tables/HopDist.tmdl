@@ -1,0 +1,40 @@
+table HopDist
+	lineageTag: 7c000003-3333-4001-8001-000000000301
+
+	measure 'Hop Events' = SUM(HopDist[Events])
+		formatString: 0
+		lineageTag: 7c000003-3333-4001-8001-000000000302
+
+	measure 'Total Hop Clicks' = SUM(HopDist[Events])
+		formatString: 0
+		displayFolder: Ring-Hop
+		lineageTag: 7c000003-3333-4001-8001-000000000303
+
+	column HopCount
+		lineageTag: 7c000003-3333-4001-8001-000000000311
+		isNameInferred
+		sourceColumn: [HopCount]
+
+	column Events
+		lineageTag: 7c000003-3333-4001-8001-000000000312
+		isNameInferred
+		sourceColumn: [Events]
+
+	partition HopDist_Partition = calculated
+		mode: import
+		source =
+				DATATABLE(
+				  "HopCount", INTEGER,
+				  "Events", INTEGER,
+				  {
+				    {1, 17},
+				    {2, 12},
+				    {3, 4},
+				    {4, 13},
+				    {5, 9},
+				    {6, 5},
+				    {7, 1},
+				    {8, 3},
+				    {9, 2}
+				  }
+				)

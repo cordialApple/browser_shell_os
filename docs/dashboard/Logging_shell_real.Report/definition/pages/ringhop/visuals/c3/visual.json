@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
+  "name": "c3",
+  "position": {
+    "x": 520,
+    "y": 92,
+    "z": 2000,
+    "height": 108,
+    "width": 232,
+    "tabOrder": 3000
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopStages"
+                    }
+                  },
+                  "Property": "Injection (ms)"
+                }
+              },
+              "queryRef": "HopStages.Injection (ms)",
+              "nativeQueryRef": "Injection (ms)"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
+  "name": "c5",
+  "position": {
+    "x": 1016,
+    "y": 92,
+    "z": 4000,
+    "height": 108,
+    "width": 232,
+    "tabOrder": 5000
+  },
+  "visual": {
+    "visualType": "card",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopStrategies"
+                    }
+                  },
+                  "Property": "Ring-hop Fail Rate"
+                }
+              },
+              "queryRef": "HopStrategies.Ring-hop Fail Rate",
+              "nativeQueryRef": "Ring-hop Fail Rate"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

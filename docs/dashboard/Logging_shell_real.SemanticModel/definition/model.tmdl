@@ -13,6 +13,9 @@ annotation PBI_ProTooling = ["MCP-PBIModeling","DevMode"]
 ref table Captures
 ref table SubFields
 ref table CaptureMeta
+ref table HopStrategies
+ref table HopStages
+ref table HopDist
 
 ref cultureInfo en-US
 

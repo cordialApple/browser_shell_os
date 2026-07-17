@@ -1,0 +1,57 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
+  "name": "donutStage",
+  "position": {
+    "x": 640,
+    "y": 463,
+    "z": 7000,
+    "height": 233,
+    "width": 616,
+    "tabOrder": 8000
+  },
+  "visual": {
+    "visualType": "donutChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopStages"
+                    }
+                  },
+                  "Property": "Stage"
+                }
+              },
+              "queryRef": "HopStages.Stage",
+              "nativeQueryRef": "Stage",
+              "active": true
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopStages"
+                    }
+                  },
+                  "Property": "Stage Value (ms)"
+                }
+              },
+              "queryRef": "HopStages.Stage Value (ms)",
+              "nativeQueryRef": "Stage Value (ms)"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

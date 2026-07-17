@@ -1,0 +1,45 @@
+table HopStages
+	lineageTag: 7c000002-2222-4001-8001-000000000201
+
+	measure 'Stage Value (ms)' = SUM(HopStages[ValueMs])
+		formatString: #,0.0 "ms"
+		lineageTag: 7c000002-2222-4001-8001-000000000202
+
+	measure 'Injection (ms)' = CALCULATE(SUM(HopStages[ValueMs]), HopStages[Stage] = "Ready -> keys sent")
+		formatString: #,0.0 "ms"
+		displayFolder: Ring-Hop
+		lineageTag: 7c000002-2222-4001-8001-000000000203
+
+	measure 'Restore Floor (ms)' = CALCULATE(SUM(HopStages[ValueMs]), HopStages[Stage] = "Restore -> foreground-ready")
+		formatString: #,0.0 "ms"
+		displayFolder: Ring-Hop
+		lineageTag: 7c000002-2222-4001-8001-000000000204
+
+	column Stage
+		lineageTag: 7c000002-2222-4001-8001-000000000211
+		isNameInferred
+		sourceColumn: [Stage]
+
+	column ValueMs
+		lineageTag: 7c000002-2222-4001-8001-000000000212
+		isNameInferred
+		sourceColumn: [ValueMs]
+
+	column Note
+		lineageTag: 7c000002-2222-4001-8001-000000000213
+		isNameInferred
+		sourceColumn: [Note]
+
+	partition HopStages_Partition = calculated
+		mode: import
+		source =
+				DATATABLE(
+				  "Stage", STRING,
+				  "ValueMs", DOUBLE,
+				  "Note", STRING,
+				  {
+				    {"Click -> restore", 1.3, "issue SW_RESTORE"},
+				    {"Restore -> foreground-ready", 62.2, "un-minimize + foreground floor (OS-bound)"},
+				    {"Ready -> keys sent", 19.6, "batched SendInput injection (hop_count median 3)"}
+				  }
+				)

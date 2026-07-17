@@ -1,0 +1,63 @@
+table HopStrategies
+	lineageTag: 7c000001-1111-4001-8001-000000000101
+
+	measure 'Strategy Median (ms)' = SUM(HopStrategies[MedianMs])
+		formatString: #,0.0 "ms"
+		lineageTag: 7c000001-1111-4001-8001-000000000102
+
+	measure 'Ring-hop Median (ms)' = CALCULATE(SUM(HopStrategies[MedianMs]), HopStrategies[Strategy] = "Optimal ring-hop")
+		formatString: #,0.0 "ms"
+		displayFolder: Ring-Hop
+		lineageTag: 7c000001-1111-4001-8001-000000000103
+
+	measure 'UIA Baseline (ms)' = CALCULATE(SUM(HopStrategies[MedianMs]), HopStrategies[Strategy] = "UIA walk (baseline)")
+		formatString: #,0.0 "ms"
+		displayFolder: Ring-Hop
+		lineageTag: 7c000001-1111-4001-8001-000000000104
+
+	measure 'Ring-hop Speedup' = DIVIDE([UIA Baseline (ms)], [Ring-hop Median (ms)])
+		formatString: 0.0"x"
+		displayFolder: Ring-Hop
+		lineageTag: 7c000001-1111-4001-8001-000000000105
+
+	measure 'Ring-hop Fail Rate' = CALCULATE(SUM(HopStrategies[FailRate]), HopStrategies[Strategy] = "Optimal ring-hop")
+		formatString: 0.0%
+		displayFolder: Ring-Hop
+		lineageTag: 7c000001-1111-4001-8001-000000000106
+
+	column Strategy
+		lineageTag: 7c000001-1111-4001-8001-000000000111
+		isNameInferred
+		sourceColumn: [Strategy]
+
+	column MedianMs
+		lineageTag: 7c000001-1111-4001-8001-000000000112
+		isNameInferred
+		sourceColumn: [MedianMs]
+
+	column FailRate
+		lineageTag: 7c000001-1111-4001-8001-000000000113
+		isNameInferred
+		sourceColumn: [FailRate]
+
+	column Note
+		lineageTag: 7c000001-1111-4001-8001-000000000114
+		isNameInferred
+		sourceColumn: [Note]
+
+	partition HopStrategies_Partition = calculated
+		mode: import
+		source =
+				DATATABLE(
+				  "Strategy", STRING,
+				  "MedianMs", DOUBLE,
+				  "FailRate", DOUBLE,
+				  "Note", STRING,
+				  {
+				    {"UIA walk (baseline)", 539, 0, "UIA tree-walk + Select; incl ~72ms confirm settle"},
+				    {"Spaced relative", 578, 0.133, "Ctrl+PgUp/PgDn with 8ms inter-tap gaps"},
+				    {"Absolute jump", 252, 0.067, "Ctrl+digit direct; tail past 8th degrades"},
+				    {"Batched relative", 303, 0, "relative walk packed into one SendInput"},
+				    {"Optimal ring-hop", 95, 0, "anchored shortest path on the tab ring"}
+				  }
+				)

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.10.0/schema.json",
+  "name": "colHops",
+  "position": {
+    "x": 640,
+    "y": 223,
+    "z": 6000,
+    "height": 228,
+    "width": 616,
+    "tabOrder": 7000
+  },
+  "visual": {
+    "visualType": "columnChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopDist"
+                    }
+                  },
+                  "Property": "HopCount"
+                }
+              },
+              "queryRef": "HopDist.HopCount",
+              "nativeQueryRef": "HopCount",
+              "active": true
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "HopDist"
+                    }
+                  },
+                  "Property": "Hop Events"
+                }
+              },
+              "queryRef": "HopDist.Hop Events",
+              "nativeQueryRef": "Hop Events"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true
+  }
+}
