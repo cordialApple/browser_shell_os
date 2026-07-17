@@ -793,7 +793,13 @@ LRESULT HostWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
                 m_store.SetTabs(payload->hwnd, std::move(payload->freshTabs));
             else if (payload->outcome == ActivateOutcome::Selected && payload->matchedIndex >= 0 &&
                      m_store.Has(payload->hwnd))
+            {
+                // Keystroke path writes the target index optimistically (never UIA-confirmed).
+                // Reconcile: a debounced snapshot re-reads the true selection off the hot path,
+                // correcting the cache if the hop landed elsewhere.
                 m_store.SetActiveTab(payload->hwnd, payload->matchedIndex);
+                RequestSnapshotDebounced(payload->hwnd);
+            }
             delete payload;
         }
         return 0;
