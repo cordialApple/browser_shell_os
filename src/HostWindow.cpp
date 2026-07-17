@@ -53,6 +53,12 @@ namespace
     // (OUTOFCONTEXT delivers on our message-pump thread). No cross-thread access.
     HWND s_dockHwnd = nullptr;
 
+    // Same single-instance/UI-thread contract as s_dockHwnd. Lets WinEventProc signal the keystroke
+    // worker's readiness gate the instant a window becomes foreground, bypassing the kWindowEventMsg
+    // queue (which backs up under rapid minimize/reopen). SetEvent inside NotifyForeground is the only
+    // cross-thread touch and is kernel-safe. Cleared before m_tabReader.reset() in WM_DESTROY.
+    TabReader* s_tabReader = nullptr;
+
     // Same single-instance/UI-thread contract as s_dockHwnd. Lets the one static WinEventProc
     // tell the global fg-fullscreen LOCATIONCHANGE hook apart from the explorer-scoped taskbar
     // hook (both fire EVENT_OBJECT_LOCATIONCHANGE) and route it to suppression, not a re-measure.
@@ -175,6 +181,7 @@ bool HostWindow::Create(HINSTANCE instance)
         WINEVENT_OUTOFCONTEXT);
 
     m_tabReader = std::make_unique<TabReader>(hwnd, kTabSnapshotMsg, kTabActivateResultMsg);
+    s_tabReader = m_tabReader.get();
 
     m_fanPopup = std::make_unique<FanPopup>();
     m_fanPopup->Create(instance, hwnd, kFanActivateMsg);
@@ -284,6 +291,11 @@ void HostWindow::RequestSnapshotDebounced(HWND hwnd)
 void HostWindow::RestoreWindow(HWND target)
 {
     if (!target) return;
+    // Kill the minimize-restore animation on this window so it snaps up: the keystroke readiness
+    // gate (foreground==target) then clears in ~one frame instead of waiting out the ~90ms DWM
+    // transition. Persists on the window; a fast switcher wants snappy, not animated.
+    const BOOL disable = TRUE;
+    DwmSetWindowAttribute(target, DWMWA_TRANSITIONS_FORCEDISABLED, &disable, sizeof(disable));
     ShowWindowAsync(target, SW_RESTORE);
     if (!SetForegroundWindow(target))
     {
@@ -426,6 +438,10 @@ void CALLBACK HostWindow::WinEventProc(HWINEVENTHOOK hHook, DWORD event, HWND hw
         return;
     }
     if (idObject != OBJID_WINDOW) return;
+    // Wake the keystroke worker's readiness gate the moment foreground lands, ahead of the queued
+    // kWindowEventMsg below (spurious wakes for non-target windows are harmless: worker rechecks).
+    if (event == EVENT_SYSTEM_FOREGROUND && s_tabReader)
+        s_tabReader->NotifyForeground();
     TRACE_EVENT("WinEventCallback",
         TraceLoggingUInt32(event, "event_id"),
         TraceLoggingPointer(hwnd, "hwnd"));
@@ -801,6 +817,7 @@ LRESULT HostWindow::WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
         // Join every worker before unhooking (worker post lands on s_dockHwnd).
         m_configWatcher.reset();
         m_folderFanWatchers.clear();
+        s_tabReader = nullptr;   // stop WinEventProc signaling before the worker is destroyed
         m_tabReader.reset();
         m_fanPopup.reset();
         m_taskbarOverlay.reset();

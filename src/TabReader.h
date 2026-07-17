@@ -42,6 +42,9 @@ public:
     void RequestKeystrokeHop(HWND hwnd, int activeIndex, int targetIndex, int tabCount,
                              long long tClickUs, long long tRestoreUs);
 
+    // UI thread (WinEventProc) calls this on EVENT_SYSTEM_FOREGROUND to wake the readiness gate.
+    void NotifyForeground();
+
 private:
     enum class ReqKind { Snapshot, Activate, KeystrokeHop };
     struct Request {
@@ -74,4 +77,5 @@ private:
     std::deque<Request>         m_queue;
     std::atomic<bool>           m_stop{false};
     std::shared_ptr<ExitSignal> m_exit;
+    HANDLE                      m_fgReadyEvent = nullptr;   // auto-reset; SetEvent wakes the readiness gate
 };

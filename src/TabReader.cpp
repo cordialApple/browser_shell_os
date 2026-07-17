@@ -505,7 +505,7 @@ static WORD HopVk(const Hop& h)
 }
 
 static TabActivateResult KeystrokeHop(HWND hwnd, int activeIndex, int targetIndex, int tabCount,
-                                      const std::atomic<bool>& stop,
+                                      const std::atomic<bool>& stop, HANDLE fgReadyEvent,
                                       long long tClickUs, long long tRestoreUs)
 {
     TabActivateResult r{ hwnd, ActivateOutcome::Failed, -1, {} };
@@ -529,12 +529,16 @@ static TabActivateResult KeystrokeHop(HWND hwnd, int activeIndex, int targetInde
     };
 
     // Injected input lands on the foreground window: gate until the target actually IS foreground.
+    // Event-driven: WinEventProc SetEvents fgReadyEvent on EVENT_SYSTEM_FOREGROUND; the wait wakes
+    // then, or after kPollIntervalMs as a safety ceiling (missed/in-place events), or on teardown.
     const long long t0 = NowMs();
     bool ready = false;
     while (IsWindow(hwnd) && NowMs() - t0 < kReadyTimeoutMs)
     {
         if (IsWindowVisible(hwnd) && !IsIconic(hwnd) && GetForegroundWindow() == hwnd) { ready = true; break; }
-        if (CancelableSleep(stop, kPollIntervalMs)) return Finish();
+        if (stop.load()) return Finish();
+        if (fgReadyEvent) WaitForSingleObject(fgReadyEvent, kPollIntervalMs);
+        else if (CancelableSleep(stop, kPollIntervalMs)) return Finish();   // event-create failed: real sleep, no busy-spin
     }
     if (!ready) return Finish();
     tReadyUs = trace::NowUs();
@@ -583,6 +587,7 @@ TabReader::TabReader(HWND dockHwnd, UINT snapshotMsg, UINT activateMsg)
     : m_dockHwnd(dockHwnd), m_snapshotMsg(snapshotMsg), m_activateMsg(activateMsg),
       m_exit(std::make_shared<ExitSignal>())
 {
+    m_fgReadyEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     m_thread = std::thread([this, exit = m_exit] {
         WorkerLoop();
         {
@@ -600,6 +605,7 @@ TabReader::~TabReader()
         m_stop = true;
     }
     m_cv.notify_one();
+    if (m_fgReadyEvent) SetEvent(m_fgReadyEvent);   // wake a worker parked in the readiness gate
 
     // m_stop only bounds sleeps; cannot interrupt wedged UIA/COM calls. Bounded-join: if call hangs after timeout, detach (shutdown-only UB).
     bool exited = false;
@@ -609,9 +615,17 @@ TabReader::~TabReader()
                                      [this] { return m_exit->exited; });
     }
     if (exited)
+    {
         m_thread.join();
+        if (m_fgReadyEvent) { CloseHandle(m_fgReadyEvent); m_fgReadyEvent = nullptr; }
+    }
     else if (m_thread.joinable())
-        m_thread.detach();
+        m_thread.detach();   // detached worker may still touch m_fgReadyEvent; leak it (process exiting)
+}
+
+void TabReader::NotifyForeground()
+{
+    if (m_fgReadyEvent) SetEvent(m_fgReadyEvent);
 }
 
 void TabReader::RequestSnapshot(HWND hwnd)
@@ -696,7 +710,7 @@ void TabReader::WorkerLoop()
                 TabActivateResult result{ req.hwnd, ActivateOutcome::Failed, -1, {} };
                 if (req.kind == ReqKind::KeystrokeHop)
                     result = KeystrokeHop(req.hwnd, req.activeIndex, req.targetIndex, req.tabCount,
-                                          m_stop, req.tClickUs, req.tRestoreUs);
+                                          m_stop, m_fgReadyEvent, req.tClickUs, req.tRestoreUs);
                 else if (automation)
                     result = ActivateTab(automation.Get(), req.hwnd,
                                          req.wantedTitle, req.fallbackIndex, m_stop,
