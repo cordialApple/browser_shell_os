@@ -1,5 +1,4 @@
 #include "WindowMonitor.h"
-#include <psapi.h>
 
 namespace
 {

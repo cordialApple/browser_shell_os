@@ -8,7 +8,6 @@ enum class ButtonStyle  { Pill, Icon };
 enum class ButtonAction { Url, Shortcut, Command, FolderFan };
 
 struct Button {
-    std::wstring id;
     ButtonStyle  style  = ButtonStyle::Pill;
     std::wstring label;
     std::wstring iconPath;

@@ -21,8 +21,6 @@ public:
 
     bool Create(HINSTANCE instance);
 
-    HWND Hwnd() const { return m_hwnd; }
-
 private:
     static LRESULT CALLBACK StaticWndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);
     LRESULT WndProc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam);

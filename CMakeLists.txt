@@ -26,7 +26,7 @@ target_compile_definitions(peekbar PRIVATE
     WINVER=0x0A00
     NTDDI_VERSION=0x0A000004
 )
-target_link_libraries(peekbar PRIVATE shell32 user32 gdi32 msimg32 psapi ole32 oleaut32 UIAutomationCore dwmapi)
+target_link_libraries(peekbar PRIVATE shell32 user32 gdi32 msimg32 ole32 oleaut32 UIAutomationCore dwmapi)
 
 # Decoupled observability tool: separate target, no shared code, never linked
 # into the shell. One repo, two targets — see docs/profiler-project-structure.md.

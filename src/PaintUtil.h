@@ -9,7 +9,6 @@ namespace Paint
     constexpr COLORREF kChipActiveBg = RGB(0xF8, 0x7E, 0x73);
     constexpr COLORREF kTextPrimary  = RGB(220, 220, 220);
     constexpr COLORREF kTextActive   = RGB(38,  20,  16);  // dark warm — legible on coral active chip
-    constexpr COLORREF kTextSecond   = RGB(170, 170, 176);
     constexpr COLORREF kTextOnBg     = RGB(20,  24,  32);   // dark — legible on the light button pill
     constexpr COLORREF kButtonBg     = RGB(228, 231, 238);  // light pill — pops in the taskbar gap
     constexpr COLORREF kButtonBorder = RGB(120, 124, 132);

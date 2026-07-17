@@ -236,7 +236,6 @@ void Launcher::Load()
             }
         }
 
-        b.id = L"btn" + std::to_wstring(m_buttons.size());
         m_buttons.push_back(std::move(b));
     }
 
