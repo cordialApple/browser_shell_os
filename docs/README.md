@@ -19,6 +19,8 @@ flowchart LR
     R -->|chips + staggered cards| G[Taskbar gap]
     T[TaskbarOverlayWindow] -->|measures gap via UIA| G
     R -.hover.-> F[Fan popup]
+    F -.tab click.-> W
+    W -.ring-hop SendInput.-> B
     L[Launcher] -->|pill buttons| G
 ```
 
