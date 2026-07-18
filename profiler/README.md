@@ -26,11 +26,11 @@ or header is included.
   <em>Live metrics table (event / count / rate / p50 / p95 / max). Counts climb as fan-activate events fire.</em>
 </p>
 
-A representative raw per-click capture is committed at [`captures/fan_activate_breakdown_long.csv`](captures/fan_activate_breakdown_long.csv) (one baseline run, 7 clicks). These `FanActivateLatency` captures are the pre-ring-hop UIA-walk baseline; they feed a git-diffable Power BI dashboard:
+A representative raw per-click capture is committed at [`captures/fan_activate_breakdown_long.csv`](captures/fan_activate_breakdown_long.csv) (one baseline run, 7 clicks). These captures feed a git-diffable Power BI dashboard. Profiling the `FanActivateLatency` UIA walk is what pointed at the ring-hop rewrite that now leads the board:
 
 <p align="center">
-  <img src="../docs/dashboard/img/overview.png" width="800" alt="Latency Overview dashboard page built on this profiler's output: 530.6 ms average, 271 ms fastest run, 55% reduction over 5 runs, restore-to-tab-found dominant"><br>
-  <em>The latency dashboard, built on this profiler's output. Full analysis: <a href="../docs/dashboard/">docs/dashboard/</a>.</em>
+  <img src="../docs/dashboard/img/ringhop.png" width="800" alt="Ring-Hop Activation dashboard page built on this profiler's output: 95 ms median, 5.7x over the UIA walk, 19.6 ms injection, 0% fail rate"><br>
+  <em>The latency dashboard, built on this profiler's output: ring-hop activation at 95 ms median (5.7x over the UIA walk). The UIA-era pages are kept as the historical baseline. Full analysis: <a href="../docs/dashboard/">docs/dashboard/</a>.</em>
 </p>
 
 ## Build

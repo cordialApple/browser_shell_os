@@ -41,7 +41,7 @@ processes, and never talks to the network. Full breakdown: [`SECURITY.md`](SECUR
 
 ### Grab the ZIP and run
 
-Build the distributable once, then it's just unzip-and-run — no installer, no
+Build the distributable once, then it's just unzip-and-run: no installer, no
 admin rights, no dependencies:
 
 ```
@@ -61,7 +61,7 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1     # copy to %LOCALAPPDA
 powershell -ExecutionPolicy Bypass -File .\uninstall.ps1   # undo (per-user only, no admin)
 ```
 
-Autostart is per-user (HKCU `...\CurrentVersion\Run`) — nothing system-wide,
+Autostart is per-user (HKCU `...\CurrentVersion\Run`), nothing system-wide,
 nothing that needs elevation. The in-zip `README.txt` has the full quickstart
 and `config.sample.txt` documents the launcher-button format.
 
@@ -101,19 +101,19 @@ How it works, in depth: [`docs/`](docs/).
 ## Performance & observability
 
 Tab-restore felt slow, so I instrumented the path with a separate ETW-based
-profiler (`shell_profiler`) and used a git-diffable Power BI dashboard to guide
-the work. `restore→tab-found` was the dominant cost. Guided passes took the
-path from 602 ms to 271 ms across 5 capture runs (102 clicks). Details:
+profiler (`shell_profiler`) and a git-diffable Power BI dashboard. Profiling
+pinned the cost on a UI Automation tree-walk, so activation was rebuilt to skip
+UIA on the hot path entirely: a ring-hop planner computes the shortest keystroke
+sequence to the target tab and sends it as one batched `SendInput`. Median tab
+activation dropped from 539 ms to ~95 ms (5.7x), with the injection step
+collapsing from ~137 ms to ~20 ms (`KeystrokeHopLatency`). Details:
 [`docs/dashboard/`](docs/dashboard/) and [`profiler/`](profiler/).
 
-That measurement pointed at the UIA tree-walk itself, so activation was
-ultimately rebuilt to skip UIA on the hot path entirely: a ring-hop planner
-that computes the shortest keystroke sequence to the target tab and sends it as
-one batched `SendInput`. Median tab activation dropped from 539 ms (the UIA
-walk) to ~95 ms — 5.7× — with the injection step collapsing from ~137 ms to
-~20 ms (`KeystrokeHopLatency`).
-
 <p align="center">
-  <img src="docs/dashboard/img/stage-bottlenecks.png" width="800" alt="Per-stage latency breakdown: restore-to-tab-found tops at 306.5 ms across 5 capture runs and 102 clicks"><br>
-  <em>Per-stage latency breakdown. <code>restore&rarr;tab-found</code> dominates. Full dashboard in <a href="docs/dashboard/">docs/dashboard/</a>.</em>
+  <img src="docs/dashboard/img/ringhop.png" width="800" alt="Ring-Hop Activation dashboard: 95 ms median tab activation, 5.7x faster than the UIA walk, 19.6 ms injection, 0% fail rate, with strategy comparison and hop-count distribution"><br>
+  <em>Ring-hop activation: 95 ms median, 5.7x over the UIA baseline, injection down to ~20 ms, 0% fail rate. Full dashboard in <a href="docs/dashboard/">docs/dashboard/</a>.</em>
 </p>
+
+Before that rewrite the same dashboard tracked the earlier in-place UIA tuning:
+guided descent took the walk from 602 ms to 271 ms across 5 runs (102 clicks).
+Those pages are kept as the historical baseline.

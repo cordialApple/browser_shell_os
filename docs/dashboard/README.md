@@ -41,21 +41,21 @@ replaced the UIA walk on the hot path. It reads from three separate tables
 (`HopStrategies`, `HopStages`, `HopDist`) so the UIA-era measures above stay
 untouched. It shows:
 
-- **Median latency by strategy** &mdash; the A/B/C/D bake-off: UIA walk 539 ms,
+- **Median latency by strategy.** The A/B/C/D bake-off: UIA walk 539 ms,
   spaced relative 578 ms, absolute jump 252 ms, batched relative 303 ms, optimal
   ring-hop **95 ms** (5.7&times; vs UIA). Endpoint caveat: keystroke medians end
   at keys-sent; the UIA baseline includes its ~72 ms confirm settle, so the bar
   is a like-for-like ranking of the medians, not a settle-normalized one.
-- **Where the ~83 ms goes** &mdash; `restore &rarr; foreground-ready` (62 ms, the
+- **Where the ~83 ms goes.** `restore &rarr; foreground-ready` (62 ms, the
   OS un-minimize floor) dwarfs `ready &rarr; keys-sent` injection (20 ms).
   Injection is solved; the restore floor is what remains.
-- **Keystrokes per click** &mdash; the planner's hop-count distribution
+- **Keystrokes per click.** The planner's hop-count distribution
   (median 3, capped at 9 by anchoring vs 22 for a naive relative walk).
 
-> No PNG is committed for this page yet: it renders on the next **Home &rarr;
-> Refresh** in Power BI Desktop on Windows. Data source: the committed
-> `captures/capture_optimal*.txt` runs, analyzed in
-> `captures/ANALYSIS_optimal.md`.
+<p align="center">
+  <img src="img/ringhop.png" width="800" alt="Ring-Hop Era page: 95 ms median activation, 5.7x over the UIA baseline, 19.6 ms injection, 0% fail rate, strategy bake-off bar chart and hop-count distribution"><br>
+  <em>Ring-Hop Era: 95 ms median (5.7&times; the UIA walk), injection down to 19.6 ms, 0% fail rate over 66 events. Data source: the committed <code>captures/capture_optimal*.txt</code> runs, analyzed in <code>captures/ANALYSIS_optimal.md</code>.</em>
+</p>
 
 ## Open it
 Open `Logging_shell_real.pbip` in Power BI Desktop (needs the **"Store reports using enhanced metadata
@@ -70,8 +70,8 @@ the calculated tables, then **Ctrl+S**.
   the per-run aggregates. One representative raw per-click run (7 clicks, baseline) is kept at
   `profiler/captures/fan_activate_breakdown_long.csv`; the full 102-click corpus was not retained.
 - **Pages:** Latency Overview · Stage Bottlenecks / Capture Metadata · Run Trends & Guided Descent · Ring-Hop Era.
-- **Tables:** UIA era &mdash; `Captures` (per-run), `SubFields` (per-stage), `CaptureMeta` (per-run
-  instrumentation notes). Ring-hop era &mdash; `HopStrategies` (strategy bake-off), `HopStages`
+- **Tables:** UIA era: `Captures` (per-run), `SubFields` (per-stage), `CaptureMeta` (per-run
+  instrumentation notes). Ring-hop era: `HopStrategies` (strategy bake-off), `HopStages`
   (restore vs injection split), `HopDist` (keystrokes-per-click distribution).
 - **Theme:** `Logging_shell_real.Report/StaticResources/RegisteredResources/LatencyDark.json` (dark).
 

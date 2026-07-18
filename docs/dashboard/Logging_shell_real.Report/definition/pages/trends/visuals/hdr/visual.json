@@ -31,7 +31,7 @@
               {
                 "textRuns": [
                   {
-                    "value": "Latency dropping across runs — guided descent wins",
+                    "value": "Latency dropping across runs: guided descent wins",
                     "textStyle": {
                       "fontFamily": "'Segoe UI', wf_segoe-ui_normal, helvetica, arial, sans-serif",
                       "fontSize": "11pt",
